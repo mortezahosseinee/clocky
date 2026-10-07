@@ -36,9 +36,15 @@ export default function App() {
     StorageService.setLanguage(lang);
   }, [lang]);
 
-  // Apply colors on mount
+  // Apply colors and sync database with server on mount
   useEffect(() => {
     StorageService.applyThemeColors(StorageService.getSettings());
+    StorageService.syncFromServer().then(updated => {
+      if (updated) {
+        const u = StorageService.getCurrentUser();
+        if (u) setCurrentUser(u);
+      }
+    });
   }, []);
 
   const handleToggleLang = () => {

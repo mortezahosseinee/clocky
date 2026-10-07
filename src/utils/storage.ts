@@ -282,9 +282,78 @@ function initializeDatabaseIfEmpty() {
   }
 }
 
+let pushTimeout: any = null;
+function schedulePushToServer() {
+  if (typeof window === 'undefined') return;
+  if (pushTimeout) clearTimeout(pushTimeout);
+  pushTimeout = setTimeout(() => {
+    StorageService.pushToServer();
+  }, 300);
+}
+
 initializeDatabaseIfEmpty();
 
 export const StorageService = {
+  // Bi-directional Server Sync (PostgreSQL & Persistent File)
+  async syncFromServer(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    try {
+      const res = await fetch('/api/sync');
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data || typeof data !== 'object') return false;
+
+      let hasUpdated = false;
+      if (Array.isArray(data.users) && data.users.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
+        hasUpdated = true;
+      }
+      if (Array.isArray(data.groups) && data.groups.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(data.groups));
+        hasUpdated = true;
+      }
+      if (Array.isArray(data.projects) && data.projects.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(data.projects));
+        hasUpdated = true;
+      }
+      if (Array.isArray(data.attendance)) {
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(data.attendance));
+        hasUpdated = true;
+      }
+      if (data.settings && typeof data.settings === 'object' && Object.keys(data.settings).length > 0) {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(data.settings));
+        this.applyThemeColors(this.getSettings());
+        hasUpdated = true;
+      }
+
+      // If server was completely empty of users, push our initial seed to server
+      if (!data.users || data.users.length === 0) {
+        this.pushToServer();
+      }
+      return hasUpdated;
+    } catch {
+      return false;
+    }
+  },
+
+  pushToServer() {
+    if (typeof window === 'undefined') return;
+    try {
+      const payload = {
+        users: this.getUsers(true),
+        groups: this.getGroups(),
+        projects: this.getProjects(),
+        attendance: this.getAttendanceRecords(),
+        settings: this.getSettings()
+      };
+      fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch {}
+  },
+
   // Settings & Theme
   getSettings(): SystemSettings {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -313,6 +382,7 @@ export const StorageService = {
   saveSettings(settings: SystemSettings) {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     this.applyThemeColors(settings);
+    schedulePushToServer();
   },
 
   applyThemeColors(settings: SystemSettings) {
@@ -374,6 +444,7 @@ export const StorageService = {
       users.push(user);
     }
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    schedulePushToServer();
   },
 
   archiveUser(userId: string) {
@@ -400,6 +471,7 @@ export const StorageService = {
     const users = this.getUsers(true).filter(u => u.id !== userId);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
     this.addLog('PERMANENT_DELETE_USER', `کاربر شناسه ${userId} به طور دائم از پایگاه داده حذف گردید.`);
+    schedulePushToServer();
   },
 
   validateUser(identifierOrUsername: string, passwordPlain: string): User | null {
@@ -475,12 +547,14 @@ export const StorageService = {
       groups.push(group);
     }
     localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+    schedulePushToServer();
   },
 
   deleteGroup(groupId: string) {
     const groups = this.getGroups().filter(g => g.id !== groupId);
     localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
     this.addLog('DELETE_GROUP', `گروه کاربری شناسه ${groupId} حذف شد.`);
+    schedulePushToServer();
   },
 
   // Projects
@@ -499,12 +573,14 @@ export const StorageService = {
       projects.push(project);
     }
     localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
+    schedulePushToServer();
   },
 
   deleteProject(projectId: string) {
     const projects = this.getProjects().filter(p => p.id !== projectId);
     localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
     this.addLog('DELETE_PROJECT', `پروژه شناسه ${projectId} حذف شد.`);
+    schedulePushToServer();
   },
 
   // Attendance Records
@@ -535,11 +611,13 @@ export const StorageService = {
       records.unshift(record);
     }
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+    schedulePushToServer();
   },
 
   deleteAttendanceRecord(recordId: string) {
     const records = this.getAttendanceRecords().filter(r => r.id !== recordId);
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+    schedulePushToServer();
   },
 
   // Registration Requests

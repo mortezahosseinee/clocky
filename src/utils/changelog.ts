@@ -1,8 +1,29 @@
 import { ChangelogItem } from '../types';
 
-export const APP_CURRENT_VERSION = 'v2.0.3';
+export const APP_CURRENT_VERSION = 'v2.0.4';
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: 'v2.0.4',
+    releaseDate: '2026-10-07',
+    releaseDateFa: '۱۴۰۵/۰۷/۱۶',
+    titleFa: 'اتصال واقعی به پایگاه داده PostgreSQL و همگام‌سازی دائمی سرور با ماندگاری کامل داده‌ها بعد از Git Pull و Rebuild داکر',
+    titleEn: 'Real PostgreSQL Database Persistence & Multi-Device Server Synchronization Across Git Pulls and Docker Rebuilds',
+    changesFa: [
+      'برقراری اتصال واقعی بک‌اند به PostgreSQL 16 و ذخیره‌سازی جداول کاربران، گروه‌ها، پروژه‌ها و کارکردها در دیتابیس سرور',
+      'ذخیره دائمی و دوطرفه اطلاعات در مسیر clocky-data/app/ جهت تضمین حفظ ۱۰۰٪ داده‌ها پس از هر بار git pull، راه‌اندازی مجدد داکر یا پاک شدن کش',
+      'همگام‌سازی آنی تمام مرورگرها و دستگاه‌ها (موبایل و کامپیوتر) از طریق سرویس api/sync/ در بدو لود و هنگام ارسال فرم‌ها',
+      'تلاش خودکار برای دریافت آخرین فهرست کاربران از سرور پیش از رد لاگین جهت اطمینان از امکان ورود فوری پرسنل جدید',
+      'نمایش پیش‌فرض و آشکار رمز عبور هنگام تعریف کاربر جدید، ثبت هوشمند نام کاربری از پیشوند ایمیل و راهنمای شفاف رمزهای پیش‌فرض'
+    ],
+    changesEn: [
+      'Established real PostgreSQL 16 backend integration persisting users, groups, projects, and work records in attendance_db',
+      'Dual-persistent server storage to clocky-data/app/ ensuring 100% data retention across git pulls, container rebuilds, and cache purges',
+      'Real-time multi-device and multi-browser synchronization via /api/sync on mount and user mutations',
+      'Automatic server sync before rejecting login attempts to guarantee instant login for newly provisioned accounts',
+      'Default visible password display during user creation, smart email prefix fallback for usernames, and explicit default password notices'
+    ]
+  },
   {
     version: 'v2.0.3',
     releaseDate: '2026-10-07',

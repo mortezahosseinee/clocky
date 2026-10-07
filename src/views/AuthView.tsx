@@ -64,11 +64,22 @@ export const AuthView: React.FC<AuthViewProps> = ({
       : 'Enterprise Attendance, Missions & Timesheet Management'
   );
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Automatically sync with server on mount so newly created users from other devices/admins are immediately accessible
+  useEffect(() => {
+    StorageService.syncFromServer();
+  }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
 
-    const user = StorageService.validateUser(loginUsername.trim(), loginPassword.trim());
+    let user = StorageService.validateUser(loginUsername.trim(), loginPassword.trim());
+    if (!user) {
+      // Try fast-syncing with server before reporting invalid credentials
+      await StorageService.syncFromServer();
+      user = StorageService.validateUser(loginUsername.trim(), loginPassword.trim());
+    }
+
     if (!user) {
       StorageService.recordLoginAttempt(loginUsername.trim(), false);
       setLoginError(t.invalidCredentials);

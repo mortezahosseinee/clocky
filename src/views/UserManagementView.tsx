@@ -159,7 +159,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ user, la
     setIsActive(true);
     setRegistrationDate(getTodayJalali());
     setPassword(generateStrongPassword());
-    setShowPassword(false);
+    setShowPassword(true);
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -239,7 +239,11 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
       return;
     }
 
-    const currentUsername = (username.trim() || (editingUser ? editingUser.username : '') || email.trim());
+    const currentUsername = (
+      username.trim() ||
+      (editingUser ? editingUser.username : '') ||
+      (email.trim().includes('@') ? email.trim().split('@')[0] : email.trim())
+    );
 
     // Check duplicate username
     const allExisting = StorageService.getUsers(true);
@@ -252,6 +256,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
     }
 
     const trimmedPassword = password ? password.trim() : '';
+    const actualPassword = trimmedPassword || (editingUser ? (editingUser.passwordHash || 'Employee@2026') : 'Employee@2026');
     // Expiry for temporary password
     const expiryMs = trimmedPassword ? Date.now() + settings.tempPasswordExpiryMinutes * 60 * 1000 : undefined;
 
@@ -270,7 +275,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
       mustChangePassword: editingUser ? (trimmedPassword ? true : editingUser.mustChangePassword) : true,
       temporaryPasswordExpiry: trimmedPassword ? expiryMs : editingUser?.temporaryPasswordExpiry,
       createdAt: registrationDate,
-      passwordHash: trimmedPassword ? trimmedPassword : (editingUser?.passwordHash || 'Employee@2026')
+      passwordHash: actualPassword
     };
 
     StorageService.saveUser(saved);
@@ -282,7 +287,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
     // Provide immediate banner with credentials for 1-click copy
     setSavedCredentialsBanner({
       username: saved.username,
-      password: trimmedPassword || (editingUser ? undefined : 'Employee@2026'),
+      password: actualPassword,
       fullName: `${saved.firstName} ${saved.lastName}`,
       isNew: !editingUser
     });
@@ -1139,6 +1144,11 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                           : `Valid for ${settings.tempPasswordExpiryMinutes} min`}
                       </span>
                     </div>
+                    <p className="text-[11px] text-blue-800 font-b-nazanin pt-1">
+                      {isPersian
+                        ? 'رمز عبور کاربر در کادر بالا مشخص است. جهت تحویل به کاربر آن را یادداشت یا کپی فرمایید.'
+                        : 'Password is shown in the box above. Please copy or note it down for the user.'}
+                    </p>
                   </div>
                 ) : editingUser ? (
                   <div className="pt-1 space-y-1.5">
@@ -1162,7 +1172,15 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                       <span>{isPersian ? 'کپی نام کاربری و آدرس ورود' : 'Copy Username & URL'}</span>
                     </button>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="pt-1 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs space-y-1">
+                    <p className="font-semibold">
+                      {isPersian
+                        ? 'توجه: کادر رمز عبور خالی است؛ در این صورت رمز عبور پیش‌فرض Employee@2026 برای این کاربر ثبت می‌شود.'
+                        : 'Notice: Password field is empty; default password Employee@2026 will be assigned.'}
+                    </p>
+                  </div>
+                )}
 
                 {/* Inline confirmation badge when copied */}
                 {modalCopiedFeedback && (
