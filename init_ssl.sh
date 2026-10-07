@@ -119,11 +119,8 @@ if [ "$CHALLENGE_MODE" == "dns" ]; then
       --no-eff-email
   fi
 
-  echo "### اجرای سرویس Nginx ..."
-  $COMPOSE_CMD up -d nginx
-  if docker ps --format '{{.Names}}' | grep -q "^attendance_nginx$"; then
-    docker exec attendance_nginx nginx -s reload || true
-  fi
+  echo "### اعمال گواهی رسمی جدید و راه‌اندازی Nginx ..."
+  $COMPOSE_CMD restart nginx || docker restart attendance_nginx || true
 
   echo "=========================================================="
   echo "  ✅ گواهی SSL از طریق DNS با موفقیت دریافت و فعال گردید!"
@@ -182,12 +179,8 @@ set -e
 
 # 9. Reload nginx to apply new certificate
 if [ $CERTBOT_STATUS -eq 0 ] && [ -f "$DATA_PATH/conf/live/$DOMAIN/fullchain.pem" ]; then
-  echo "### بارگذاری مجدد کانفیگ Nginx با گواهی رسمی جدید ..."
-  if docker ps --format '{{.Names}}' | grep -q "^attendance_nginx$"; then
-    docker exec attendance_nginx nginx -s reload
-  else
-    $COMPOSE_CMD exec nginx nginx -s reload
-  fi
+  echo "### اعمال گواهی رسمی جدید و راه‌اندازی Nginx ..."
+  $COMPOSE_CMD restart nginx || docker restart attendance_nginx || true
 
   echo "=========================================================="
   echo "  ✅ گواهی SSL با موفقیت برای $DOMAIN نصب و فعال شد!"
