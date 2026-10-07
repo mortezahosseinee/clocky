@@ -95,14 +95,29 @@ if [ "$CHALLENGE_MODE" == "dns" ]; then
   echo "### شروع اعتبارسنجی از طریق DNS (بدون نیاز به باز بودن پورت 80) ..."
   echo "Certbot یک رکورد TXT به شما نمایش می‌دهد که باید در پنل DNS دامنه ثبت کنید."
   
-  $COMPOSE_CMD run --rm -it certbot certonly \
-    --manual \
-    --preferred-challenges dns \
-    --email $EMAIL \
-    -d $DOMAIN \
-    --rsa-key-size $RSA_KEY_SIZE \
-    --agree-tos \
-    --no-eff-email
+  CONF_ABS="$(cd "$DATA_PATH/conf" 2>/dev/null && pwd || echo "$(pwd)/$DATA_PATH/conf")"
+  
+  if command -v docker >/dev/null 2>&1; then
+    docker run --rm -it \
+      -v "$CONF_ABS:/etc/letsencrypt" \
+      certbot/certbot:latest certonly \
+      --manual \
+      --preferred-challenges dns \
+      --email $EMAIL \
+      -d $DOMAIN \
+      --rsa-key-size $RSA_KEY_SIZE \
+      --agree-tos \
+      --no-eff-email
+  else
+    $COMPOSE_CMD run --rm -it --entrypoint "certbot" certbot certonly \
+      --manual \
+      --preferred-challenges dns \
+      --email $EMAIL \
+      -d $DOMAIN \
+      --rsa-key-size $RSA_KEY_SIZE \
+      --agree-tos \
+      --no-eff-email
+  fi
 
   echo "### اجرای سرویس Nginx ..."
   $COMPOSE_CMD up -d nginx
