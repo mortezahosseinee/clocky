@@ -1,8 +1,29 @@
 import { ChangelogItem } from '../types';
 
-export const APP_CURRENT_VERSION = 'v2.0.2';
+export const APP_CURRENT_VERSION = 'v2.0.3';
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: 'v2.0.3',
+    releaseDate: '2026-10-07',
+    releaseDateFa: '۱۴۰۵/۰۷/۱۶',
+    titleFa: 'حل قطعی مشکل لاگین کاربران جدید و رفع کار نکردن دکمه کپی اطلاعات ورود در محیط‌های HTTP و مدال ویرایش',
+    titleEn: 'Fix Login for Newly Created Users & Resolve Clipboard Copy Failure in HTTP & Edit Modal',
+    changesFa: [
+      'پیاده‌سازی مکانیزم کپی همه‌منظوره (copyToClipboard) با پشتیبانی کامل از پروتکل HTTP، دامنه‌ها و IPهای بدون SSL و آی‌فریم‌ها',
+      'رفع خطای کار نکردن دکمه کپی اطلاعات ورود هنگام ویرایش کاربر و نمایش آنی تاییدیه سبز درون همان پنجره مدال',
+      'افزودن دکمه‌های مجزا برای کپی نام کاربری، کپی فقط رمز عبور و کپی کل متن ورود در فرم‌های تعریف و ویرایش کاربر',
+      'ارتقای متد validateUser برای پشتیبانی از پیشوند ایمیل، حروف عربی/فارسی (ی/ي و ک/ك)، کاراکترهای مخفی و پیش‌شماره‌های موبایل',
+      'افزودن بنر دسترسی سریع به مشخصات ورود بلافاصله پس از ثبت یا ویرایش کاربر برای جلوگیری از فراموشی یا عدم دسترسی به رمز'
+    ],
+    changesEn: [
+      'Implemented universal copyToClipboard fallback supporting insecure HTTP contexts, raw IP access, and iframes',
+      'Fixed non-responsive copy credentials button in user edit modal and added immediate in-modal feedback',
+      'Added separate quick-copy buttons for username, password only, and full login details in user forms',
+      'Enhanced validateUser with email prefix, Arabic/Persian letter unification, zero-width space stripping, and phone format normalization',
+      'Introduced post-save credentials alert banner offering immediate 1-click copy after user creation or update'
+    ]
+  },
   {
     version: 'v2.0.2',
     releaseDate: '2026-10-06',

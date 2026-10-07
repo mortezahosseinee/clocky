@@ -73,6 +73,33 @@ export function normalizePersianDigits(str: string | number | undefined | null):
 }
 
 /**
+ * Normalizes Persian/Arabic characters, letters, and whitespace for bulletproof auth matching
+ */
+export function normalizeAuthText(str: string | undefined | null): string {
+  if (!str) return '';
+  return normalizePersianDigits(str)
+    .trim()
+    .toLowerCase()
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/ة/g, 'ه')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Normalizes phone numbers to standard format (e.g., 0912...)
+ */
+export function normalizeMobileNumber(phone: string | undefined | null): string {
+  if (!phone) return '';
+  const digits = normalizePersianDigits(phone).replace(/\D/g, '');
+  if (digits.startsWith('0098')) return '0' + digits.slice(4);
+  if (digits.startsWith('98')) return '0' + digits.slice(2);
+  if (digits.length === 10 && digits.startsWith('9')) return '0' + digits;
+  return digits;
+}
+
+/**
  * Validates worldwide password standards:
  * At least 8 characters, at least 1 uppercase, 1 lowercase, 1 digit, 1 special character
  */
@@ -378,46 +405,52 @@ export const StorageService = {
   validateUser(identifierOrUsername: string, passwordPlain: string): User | null {
     if (!identifierOrUsername || !passwordPlain) return null;
 
-    const rawId = String(identifierOrUsername).trim().toLowerCase();
-    const digitsId = normalizePersianDigits(rawId).toLowerCase();
+    const rawId = String(identifierOrUsername).trim();
+    const normId = normalizeAuthText(rawId);
+    const normIdNoSpace = normId.replace(/\s+/g, '');
+    const mobileId = normalizeMobileNumber(rawId);
 
-    const rawPass = String(passwordPlain);
-    const passTrim = rawPass.trim();
-    const passDigits = normalizePersianDigits(rawPass);
-    const passTrimDigits = normalizePersianDigits(passTrim);
+    // Clean entered password
+    const cleanPass = String(passwordPlain)
+      .trim()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\r/g, '');
+    const cleanPassDigits = normalizePersianDigits(cleanPass);
 
     const users = this.getUsers(true);
     const target = users.find(u => {
-      const uName = (u.username || '').trim().toLowerCase();
-      const uEmail = (u.email || '').trim().toLowerCase();
-      const uMobile = (u.mobile || '').replace(/\s+/g, '');
-      const uMobileDigits = normalizePersianDigits(uMobile);
+      const uUsernameNorm = normalizeAuthText(u.username || '');
+      const uEmailNorm = normalizeAuthText(u.email || '');
+      const uEmailPrefixNorm = uEmailNorm.includes('@') ? uEmailNorm.split('@')[0] : '';
+      const uMobileNorm = normalizeMobileNumber(u.mobile || '');
+      const uFullNameNorm = normalizeAuthText(`${u.firstName || ''} ${u.lastName || ''}`);
+      const uFullNameNoSpace = uFullNameNorm.replace(/\s+/g, '');
 
       return (
-        uName === rawId ||
-        uName === digitsId ||
-        uEmail === rawId ||
-        uEmail === digitsId ||
-        (uMobile && (uMobile === rawId || uMobile === digitsId || uMobileDigits === digitsId || uMobileDigits === rawId))
+        uUsernameNorm === normId ||
+        (uEmailNorm && uEmailNorm === normId) ||
+        (uEmailPrefixNorm && uEmailPrefixNorm === normId) ||
+        (uMobileNorm && mobileId && uMobileNorm === mobileId) ||
+        (uFullNameNorm && uFullNameNorm === normId) ||
+        (uFullNameNoSpace && normIdNoSpace && uFullNameNoSpace === normIdNoSpace)
       );
     });
 
     if (!target) return null;
 
-    const storedPass = String(target.passwordHash || '');
-    const storedPassTrim = storedPass.trim();
+    const storedPass = String(target.passwordHash || '')
+      .trim()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\r/g, '');
     const storedPassDigits = normalizePersianDigits(storedPass);
-    const storedPassTrimDigits = normalizePersianDigits(storedPassTrim);
 
     const matches =
-      storedPass === rawPass ||
-      storedPassTrim === passTrim ||
-      storedPassDigits === passDigits ||
-      storedPassTrimDigits === passTrimDigits ||
-      storedPass === passTrim ||
-      storedPassTrim === rawPass ||
-      storedPassDigits === passTrimDigits ||
-      storedPassTrimDigits === passDigits;
+      storedPass === cleanPass ||
+      storedPassDigits === cleanPassDigits ||
+      storedPass === cleanPassDigits ||
+      storedPassDigits === cleanPass ||
+      storedPass.toLowerCase() === cleanPass.toLowerCase() ||
+      storedPassDigits.toLowerCase() === cleanPassDigits.toLowerCase();
 
     if (matches) {
       return target;

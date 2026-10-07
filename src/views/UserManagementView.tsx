@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { User, Group, UserRole } from '../types';
 import { translations, Language } from '../utils/translations';
 import { StorageService, generateStrongPassword } from '../utils/storage';
+import { copyToClipboard } from '../utils/clipboard';
 import { PersianDatePicker } from '../components/PersianDatePicker';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { getTodayJalali } from '../utils/jalali';
@@ -76,6 +77,13 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ user, la
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [copiedNotification, setCopiedNotification] = useState(false);
+  const [modalCopiedFeedback, setModalCopiedFeedback] = useState<string | null>(null);
+  const [savedCredentialsBanner, setSavedCredentialsBanner] = useState<{
+    username: string;
+    password?: string;
+    fullName: string;
+    isNew: boolean;
+  } | null>(null);
 
   // Quick Temporary Password Reset Modal
   const [resetPassUser, setResetPassUser] = useState<User | null>(null);
@@ -174,7 +182,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ user, la
     setIsModalOpen(true);
   };
 
-  const handleCopyCredentials = (uname: string, pwd: string, fullName: string) => {
+  const handleCopyCredentials = async (uname: string, pwd: string, fullName: string) => {
     const text = isPersian
       ? `کاربر عزیز ${fullName}
 نام کاربری شما: ${uname}
@@ -187,9 +195,41 @@ Password: ${pwd}
 URL: ${window.location.origin}
 Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
 
-    navigator.clipboard.writeText(text);
-    setCopiedNotification(true);
-    setTimeout(() => setCopiedNotification(false), 3000);
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedNotification(true);
+      setModalCopiedFeedback(isPersian ? 'مشخصات کامل ورود در کلیپ‌بورد کپی شد!' : 'Full login details copied!');
+      setTimeout(() => {
+        setCopiedNotification(false);
+        setModalCopiedFeedback(null);
+      }, 3500);
+    }
+  };
+
+  const handleCopyPassword = async (pwd: string) => {
+    if (!pwd) return;
+    const ok = await copyToClipboard(pwd);
+    if (ok) {
+      setCopiedNotification(true);
+      setModalCopiedFeedback(isPersian ? 'رمز عبور با موفقیت کپی شد!' : 'Password copied!');
+      setTimeout(() => {
+        setCopiedNotification(false);
+        setModalCopiedFeedback(null);
+      }, 3500);
+    }
+  };
+
+  const handleCopyUsername = async (uname: string) => {
+    if (!uname) return;
+    const ok = await copyToClipboard(uname);
+    if (ok) {
+      setCopiedNotification(true);
+      setModalCopiedFeedback(isPersian ? 'نام کاربری با موفقیت کپی شد!' : 'Username copied!');
+      setTimeout(() => {
+        setCopiedNotification(false);
+        setModalCopiedFeedback(null);
+      }, 3500);
+    }
   };
 
   const handleSaveUser = (e: React.FormEvent) => {
@@ -238,6 +278,14 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
       editingUser ? 'UPDATE_USER' : 'CREATE_USER',
       `کاربر ${saved.firstName} ${saved.lastName} (${saved.username}) ${editingUser ? 'ویرایش' : 'تعریف'} گردید.`
     );
+
+    // Provide immediate banner with credentials for 1-click copy
+    setSavedCredentialsBanner({
+      username: saved.username,
+      password: trimmedPassword || (editingUser ? undefined : 'Employee@2026'),
+      fullName: `${saved.firstName} ${saved.lastName}`,
+      isNew: !editingUser
+    });
 
     setIsModalOpen(false);
     reloadData();
@@ -391,6 +439,78 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
           <span>{isPersian ? 'افزودن کاربر جدید' : 'Add New User'}</span>
         </button>
       </div>
+
+      {/* Saved Credentials Alert Banner for Instant 1-Click Copy */}
+      {savedCredentialsBanner && (
+        <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                {savedCredentialsBanner.isNew
+                  ? (isPersian ? `کاربر جدید «${savedCredentialsBanner.fullName}» با موفقیت افزوده شد.` : `User ${savedCredentialsBanner.fullName} created.`)
+                  : (isPersian ? `اطلاعات کاربر «${savedCredentialsBanner.fullName}» با موفقیت ذخیره شد.` : `User ${savedCredentialsBanner.fullName} updated.`)}
+              </span>
+            </div>
+            <button
+              onClick={() => setSavedCredentialsBanner(null)}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-xs bg-white/80 p-3 rounded-xl border border-emerald-200 font-mono">
+            <div>
+              <span className="font-sans font-semibold text-slate-600 ml-1">{isPersian ? 'نام کاربری:' : 'Username:'}</span>
+              <span className="font-bold text-slate-900">{savedCredentialsBanner.username}</span>
+            </div>
+            {savedCredentialsBanner.password && (
+              <div>
+                <span className="font-sans font-semibold text-slate-600 ml-1">{isPersian ? 'رمز عبور موقت:' : 'Temporary Password:'}</span>
+                <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{savedCredentialsBanner.password}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => handleCopyUsername(savedCredentialsBanner.username)}
+              className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>{isPersian ? 'کپی نام کاربری' : 'Copy Username'}</span>
+            </button>
+            {savedCredentialsBanner.password && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleCopyPassword(savedCredentialsBanner.password!)}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{isPersian ? 'کپی رمز عبور' : 'Copy Password'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopyCredentials(
+                      savedCredentialsBanner.username,
+                      savedCredentialsBanner.password!,
+                      savedCredentialsBanner.fullName
+                    )
+                  }
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{isPersian ? 'کپی مشخصات کامل جهت ارسال به کاربر' : 'Copy Full Login Details'}</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {copiedNotification && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center gap-2 animate-in fade-in">
@@ -832,14 +952,27 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    {t.username}
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      {t.username}
+                    </label>
+                    {(username || editingUser?.username) && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyUsername(username.trim() || editingUser?.username || '')}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold cursor-pointer"
+                        title={isPersian ? 'کپی نام کاربری' : 'Copy username'}
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>{isPersian ? 'کپی نام کاربری' : 'Copy'}</span>
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
-                    placeholder={email || 'username'}
+                    placeholder={email ? (email.includes('@') ? email.split('@')[0] : email) : 'username'}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
@@ -972,28 +1105,70 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                   </button>
                 </div>
 
-                {password && (
-                  <div className="flex items-center justify-between pt-1">
+                {password ? (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPassword(password)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                        title={isPersian ? 'کپی فقط رمز عبور' : 'Copy password only'}
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{isPersian ? 'کپی فقط رمز' : 'Copy Password'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopyCredentials(
+                            editingUser ? editingUser.username : username.trim() || email.trim(),
+                            password,
+                            `${firstName} ${lastName}`
+                          )
+                        }
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{t.copyCredentials}</span>
+                      </button>
+
+                      <span className="text-[10px] text-blue-700 font-b-nazanin mr-auto rtl:mr-auto rtl:ml-0">
+                        {isPersian
+                          ? `معتبر به مدت ${settings.tempPasswordExpiryMinutes} دقیقه`
+                          : `Valid for ${settings.tempPasswordExpiryMinutes} min`}
+                      </span>
+                    </div>
+                  </div>
+                ) : editingUser ? (
+                  <div className="pt-1 space-y-1.5">
+                    <p className="text-[11px] text-slate-500 font-b-nazanin leading-relaxed">
+                      {isPersian
+                        ? 'رمز عبور قبلی کاربر بدون تغییر باقی می‌ماند. برای تنظیم رمز موقت جدید، در کادر بالا تایپ کنید یا روی «تولید اطلاعات ورود» کلیک نمایید.'
+                        : 'Current password remains unchanged. Type new password or click Generate to set a temporary one.'}
+                    </p>
                     <button
                       type="button"
                       onClick={() =>
                         handleCopyCredentials(
-                          editingUser ? editingUser.username : username || email,
-                          password,
+                          editingUser.username,
+                          '(رمز عبور اختصاصی کاربر)',
                           `${firstName} ${lastName}`
                         )
                       }
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                     >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>{t.copyCredentials}</span>
+                      <Copy className="w-3 h-3" />
+                      <span>{isPersian ? 'کپی نام کاربری و آدرس ورود' : 'Copy Username & URL'}</span>
                     </button>
+                  </div>
+                ) : null}
 
-                    <span className="text-[10px] text-blue-700 font-b-nazanin">
-                      {isPersian
-                        ? `معتبر به مدت ${settings.tempPasswordExpiryMinutes} دقیقه`
-                        : `Valid for ${settings.tempPasswordExpiryMinutes} min`}
-                    </span>
+                {/* Inline confirmation badge when copied */}
+                {modalCopiedFeedback && (
+                  <div className="p-2 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{modalCopiedFeedback}</span>
                   </div>
                 )}
               </div>
@@ -1110,15 +1285,20 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(resetPassValue.trim());
-                    setCopiedNotification(true);
-                    setTimeout(() => setCopiedNotification(false), 3000);
-                  }}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                  onClick={() => handleCopyUsername(resetPassUser.username)}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <Copy className="w-3 h-3" />
-                  <span>{isPersian ? 'کپی فقط رمز' : 'Copy Password Only'}</span>
+                  <span>{isPersian ? 'کپی نام کاربری' : 'Copy Username'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyPassword(resetPassValue.trim())}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>{isPersian ? 'کپی فقط رمز' : 'Copy Password'}</span>
                 </button>
 
                 <button
@@ -1130,16 +1310,16 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                       `${resetPassUser.firstName} ${resetPassUser.lastName}`
                     )
                   }
-                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <Copy className="w-3 h-3" />
                   <span>{isPersian ? 'کپی کل متن ورود' : 'Copy Full Login Details'}</span>
                 </button>
 
-                {copiedNotification && (
-                  <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{t.credentialsCopied}</span>
+                {modalCopiedFeedback && (
+                  <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{modalCopiedFeedback}</span>
                   </span>
                 )}
               </div>

@@ -1284,8 +1284,8 @@ var require_node = __commonJS({
           }
           break;
         case "FILE":
-          var fs = require("fs");
-          stream2 = new fs.SyncWriteStream(fd2, { autoClose: false });
+          var fs2 = require("fs");
+          stream2 = new fs2.SyncWriteStream(fd2, { autoClose: false });
           stream2._type = "fs";
           break;
         case "PIPE":
@@ -18495,7 +18495,7 @@ var require_view = __commonJS({
     "use strict";
     var debug = require_src()("express:view");
     var path2 = require("path");
-    var fs = require("fs");
+    var fs2 = require("fs");
     var dirname = path2.dirname;
     var basename = path2.basename;
     var extname = path2.extname;
@@ -18561,7 +18561,7 @@ var require_view = __commonJS({
     function tryStat(path3) {
       debug('stat "%s"', path3);
       try {
-        return fs.statSync(path3);
+        return fs2.statSync(path3);
       } catch (e) {
         return void 0;
       }
@@ -18916,7 +18916,7 @@ var require_types = __commonJS({
 var require_mime = __commonJS({
   "node_modules/mime/mime.js"(exports2, module2) {
     var path2 = require("path");
-    var fs = require("fs");
+    var fs2 = require("fs");
     function Mime() {
       this.types = /* @__PURE__ */ Object.create(null);
       this.extensions = /* @__PURE__ */ Object.create(null);
@@ -18937,7 +18937,7 @@ var require_mime = __commonJS({
     };
     Mime.prototype.load = function(file) {
       this._loading = file;
-      var map = {}, content = fs.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
+      var map = {}, content = fs2.readFileSync(file, "ascii"), lines = content.split(/[\r\n]+/);
       lines.forEach(function(line) {
         var fields = line.replace(/\s*#.*|^\s*|\s*$/g, "").split(/\s+/);
         map[fields.shift()] = fields;
@@ -19175,7 +19175,7 @@ var require_send = __commonJS({
     var escapeHtml = require_escape_html();
     var etag = require_etag();
     var fresh = require_fresh();
-    var fs = require("fs");
+    var fs2 = require("fs");
     var mime = require_mime();
     var ms = require_ms2();
     var onFinished = require_on_finished();
@@ -19508,7 +19508,7 @@ var require_send = __commonJS({
       var i = 0;
       var self = this;
       debug('stat "%s"', path3);
-      fs.stat(path3, function onstat(err, stat) {
+      fs2.stat(path3, function onstat(err, stat) {
         if (err && err.code === "ENOENT" && !extname(path3) && path3[path3.length - 1] !== sep) {
           return next(err);
         }
@@ -19523,7 +19523,7 @@ var require_send = __commonJS({
         }
         var p = path3 + "." + self._extensions[i++];
         debug('stat "%s"', p);
-        fs.stat(p, function(err2, stat) {
+        fs2.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self.emit("file", p, stat);
@@ -19541,7 +19541,7 @@ var require_send = __commonJS({
         }
         var p = join(path3, self._index[i]);
         debug('stat "%s"', p);
-        fs.stat(p, function(err2, stat) {
+        fs2.stat(p, function(err2, stat) {
           if (err2) return next(err2);
           if (stat.isDirectory()) return next();
           self.emit("file", p, stat);
@@ -19553,7 +19553,7 @@ var require_send = __commonJS({
     SendStream.prototype.stream = function stream(path3, options) {
       var self = this;
       var res = this.res;
-      var stream2 = fs.createReadStream(path3, options);
+      var stream2 = fs2.createReadStream(path3, options);
       this.emit("stream", stream2);
       stream2.pipe(res);
       function cleanup() {
@@ -22695,9 +22695,57 @@ var require_express2 = __commonJS({
 // server.ts
 var import_express = __toESM(require_express2(), 1);
 var import_path = __toESM(require("path"), 1);
+var import_fs = __toESM(require("fs"), 1);
 var app = (0, import_express.default)();
 var PORT = process.env.PORT || 3e3;
-app.use(import_express.default.json());
+app.use(import_express.default.json({ limit: "20mb" }));
+var dataDir = process.env.DATA_DIR || import_path.default.join(process.cwd(), "data");
+if (!import_fs.default.existsSync(dataDir)) {
+  try {
+    import_fs.default.mkdirSync(dataDir, { recursive: true });
+  } catch (err) {
+    console.error("Failed to create data directory:", err);
+  }
+}
+var dbFile = import_path.default.join(dataDir, "clocky-db.json");
+app.get("/api/sync", (req, res) => {
+  try {
+    if (import_fs.default.existsSync(dbFile)) {
+      const content = import_fs.default.readFileSync(dbFile, "utf-8");
+      return res.json(JSON.parse(content));
+    }
+    return res.json({});
+  } catch (err) {
+    console.error("Error reading sync db file:", err);
+    return res.status(500).json({ error: "Failed to read sync data" });
+  }
+});
+app.post("/api/sync", (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload || typeof payload !== "object") {
+      return res.status(400).json({ error: "Invalid payload" });
+    }
+    let existing = {};
+    if (import_fs.default.existsSync(dbFile)) {
+      try {
+        existing = JSON.parse(import_fs.default.readFileSync(dbFile, "utf-8"));
+      } catch {
+        existing = {};
+      }
+    }
+    const merged = {
+      ...existing,
+      ...payload,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    import_fs.default.writeFileSync(dbFile, JSON.stringify(merged, null, 2), "utf-8");
+    return res.json({ success: true, timestamp: merged.updatedAt });
+  } catch (err) {
+    console.error("Error writing sync db file:", err);
+    return res.status(500).json({ error: "Failed to write sync data" });
+  }
+});
 app.get("/api/health", (req, res) => {
   res.json({
     status: "healthy",

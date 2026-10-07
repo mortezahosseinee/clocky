@@ -58,6 +58,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-RedisSecurePass123!}
     ports:
       - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ../clocky-data/app:/app/data
     depends_on:
       postgres:
         condition: service_healthy

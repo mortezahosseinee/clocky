@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { User, RegistrationRequest, Group, UserRole } from '../types';
 import { translations, Language } from '../utils/translations';
 import { StorageService, generateStrongPassword } from '../utils/storage';
+import { copyToClipboard } from '../utils/clipboard';
 import { getTodayJalali } from '../utils/jalali';
 import { ConfirmModal } from '../components/ConfirmModal';
 import {
@@ -82,7 +83,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ user, lang }) => {
     setFormError(null);
   };
 
-  const handleCopyFormattedCredentials = () => {
+  const handleCopyFormattedCredentials = async () => {
     const fullName = `${firstName} ${lastName}`;
     const text = isPersian
       ? `کاربر عزیز ${fullName}
@@ -96,9 +97,11 @@ Your Password: ${password}
 System URL: ${window.location.origin}
 This password is valid for ${settings.tempPasswordExpiryMinutes} minutes. If you do not login and update your password within ${settings.tempPasswordExpiryMinutes} minutes, it will expire.`;
 
-    navigator.clipboard.writeText(text);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 3000);
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 3000);
+    }
   };
 
   const handleConfirmApproval = (e: React.FormEvent) => {
