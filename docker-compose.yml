@@ -1,0 +1,101 @@
+services:
+  # PostgreSQL 16 database
+  postgres:
+    image: postgres:16-alpine
+    container_name: attendance_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-appuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Secr3tPostgresPass!}
+      POSTGRES_DB: ${POSTGRES_DB:-attendance_db}
+    volumes:
+      - ../clocky-data/postgres:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - attendance_net
+
+  # Redis 7 caching and session broker
+  redis:
+    image: redis:7-alpine
+    container_name: attendance_redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-RedisSecurePass123!}
+    volumes:
+      - ../clocky-data/redis:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-RedisSecurePass123!}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - attendance_net
+
+  # Application service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: attendance_app
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SQL_HOST: postgres
+      SQL_USER: ${POSTGRES_USER:-appuser}
+      SQL_PASSWORD: ${POSTGRES_PASSWORD:-Secr3tPostgresPass!}
+      SQL_DB_NAME: ${POSTGRES_DB:-attendance_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-RedisSecurePass123!}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - attendance_net
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: attendance_nginx
+    restart: always
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ../clocky-data/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../clocky-data/certbot/conf:/etc/letsencrypt
+      - ../clocky-data/certbot/www:/var/www/certbot
+    depends_on:
+      - app
+    networks:
+      - attendance_net
+
+  # Certbot SSL Automated Renewal Daemon
+  certbot:
+    image: certbot/certbot:latest
+    container_name: attendance_certbot
+    restart: always
+    volumes:
+      - ../clocky-data/certbot/conf:/etc/letsencrypt
+      - ../clocky-data/certbot/www:/var/www/certbot
+    # Automatically check and renew SSL certificates twice every 24 hours
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'"
+    networks:
+      - attendance_net
+
+networks:
+  attendance_net:
+    driver: bridge
