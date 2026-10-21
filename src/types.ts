@@ -47,6 +47,7 @@ export interface User {
   createdAt: string;
   passwordHash: string;
   avatar?: string;
+  updatedAt?: string;
 }
 
 export interface Group {

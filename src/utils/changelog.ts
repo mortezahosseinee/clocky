@@ -1,8 +1,27 @@
 import { ChangelogItem } from '../types';
 
-export const APP_CURRENT_VERSION = 'v2.0.13';
+export const APP_CURRENT_VERSION = 'v2.0.14';
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: 'v2.0.14',
+    releaseDate: '2026-10-21',
+    releaseDateFa: '۱۴۰۵/۰۷/۲۹',
+    titleFa: 'رفع کامل خطای ورود کاربران، جداسازی تنظیم مجدد رمز عبور از مودال ویرایش کاربر و همگام‌سازی مستقیم رمز در سرور',
+    titleEn: 'Fixed User Login Validation Across Devices, Separated Password Reset from User Edit Modal & Direct Server Password Sync',
+    changesFa: [
+      'رفع کامل مشکل خطای «نام کاربری یا رمز عبور اشتباه است» با افزودن اعتبارسنجی مستقیم سمت سرور (/api/login) و اصلاح اولویت همگام‌سازی رمز عبور از سرور',
+      'حذف بخش تنظیم رمز عبور از داخل مودال ویرایش اطلاعات کاربر تا هنگام ویرایش مشخصات پرسنل، رمز عبور کاربر هرگز تغییر نکند یا ریست نشود',
+      'قرارگیری دکمه مستقل «تنظیم رمز» دقیقاً در کنار دکمه «ویرایش» هر کاربر در جدول مدیریت کاربران به همراه نمایش و کپی رمز فعلی و صدور رمز جدید',
+      'ذخیره و همگام‌سازی مبتنی بر زمان (Timestamp) برای اطلاعات کاربران در سرور جهت جلوگیری از بازنویسی رمزهای جدید توسط مرورگرهای دیگر'
+    ],
+    changesEn: [
+      'Fixed invalid credentials login issue across all users by adding authoritative /api/login validation and fixing client-server password sync priority',
+      'Removed password input section from the Edit User modal so editing user details strictly preserves the user’s existing password',
+      'Placed a dedicated Reset Password button directly next to the Edit User button in the users table with current password display and instant reset',
+      'Added timestamp-based user merging on the server so stale browser tabs never overwrite updated user passwords'
+    ]
+  },
   {
     version: 'v2.0.13',
     releaseDate: '2026-10-21',

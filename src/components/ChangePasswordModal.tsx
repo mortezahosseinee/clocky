@@ -54,9 +54,11 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       ...user,
       mustChangePassword: false,
       passwordHash: newPassword.trim(),
-      temporaryPasswordExpiry: undefined
+      temporaryPasswordExpiry: undefined,
+      updatedAt: new Date().toISOString()
     };
 
+    StorageService.resetUserPassword(user.id, newPassword.trim(), undefined, false);
     StorageService.saveUser(updated);
     StorageService.setCurrentUser(updated);
     StorageService.addLog('PASSWORD_CHANGED', `رمز عبور کاربر ${user.username} با رعایت استانداردها تغییر یافت.`);

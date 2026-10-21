@@ -250,9 +250,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, lang, onUserUpda
       ...latest,
       passwordHash: trimmed,
       mustChangePassword: false,
-      temporaryPasswordExpiry: undefined
+      temporaryPasswordExpiry: undefined,
+      updatedAt: new Date().toISOString()
     };
 
+    StorageService.resetUserPassword(user.id, trimmed, undefined, false);
     StorageService.saveUser(updated);
     StorageService.setCurrentUser(updated);
     StorageService.addLog('PASSWORD_CHANGED', `رمز عبور کاربر ${user.username} با موفقیت تغییر یافت.`);

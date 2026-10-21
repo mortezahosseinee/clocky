@@ -77,30 +77,21 @@ export const AuthView: React.FC<AuthViewProps> = ({
     const clientIp = await detectClientIp();
     const devInfo = parseDeviceAndBrowser();
 
-    let user = StorageService.validateUser(loginUsername.trim(), loginPassword.trim());
-    if (!user) {
-      // Try fast-syncing with server before reporting invalid credentials
-      await StorageService.syncFromServer();
-      user = StorageService.validateUser(loginUsername.trim(), loginPassword.trim());
-    }
+    const authResult = await StorageService.authenticateUser(loginUsername.trim(), loginPassword.trim());
 
-    if (!user) {
+    if (!authResult.user) {
       StorageService.recordLoginAttempt(loginUsername.trim(), false, clientIp, devInfo.displayTitleFa);
-      setLoginError(t.invalidCredentials);
+      if (authResult.errorType === 'inactive') {
+        setLoginError(t.userInactiveMsg);
+      } else if (authResult.errorType === 'archived') {
+        setLoginError(t.userArchivedMsg);
+      } else {
+        setLoginError(t.invalidCredentials);
+      }
       return;
     }
 
-    if (!user.isActive) {
-      StorageService.recordLoginAttempt(loginUsername.trim(), false, clientIp, devInfo.displayTitleFa);
-      setLoginError(t.userInactiveMsg);
-      return;
-    }
-
-    if (user.isArchived) {
-      StorageService.recordLoginAttempt(loginUsername.trim(), false, clientIp, devInfo.displayTitleFa);
-      setLoginError(t.userArchivedMsg);
-      return;
-    }
+    const user = authResult.user;
 
     // Record success with real client IP & device info
     StorageService.recordLoginAttempt(user.username, true, clientIp, devInfo.displayTitleFa);

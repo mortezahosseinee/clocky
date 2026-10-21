@@ -151,7 +151,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ user, la
     if (jobTitle !== initJob) return true;
     if (role !== initRole) return true;
     if (isActive !== initActive) return true;
-    if (password !== '') return true;
+    if (!editingUser && password !== '') return true;
     if (JSON.stringify([...groupIds].sort()) !== JSON.stringify([...initGroups].sort())) return true;
     return false;
   }, [editingUser, firstName, lastName, email, username, mobile, jobTitle, role, groupIds, isActive, password]);
@@ -186,7 +186,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ user, la
   }, []);
 
   const handleOpenResetPass = (u: User) => {
-    setResetPassUser(u);
+    const latestUser = StorageService.getUserById(u.id) || u;
+    setResetPassUser(latestUser);
     setResetPassValue(generateStrongPassword());
     setShowResetPass(true);
   };
@@ -202,14 +203,23 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ user, la
       passwordHash: trimmed,
       mustChangePassword: true,
       temporaryPasswordExpiry: expiryMs,
-      isActive: true
+      isActive: true,
+      updatedAt: new Date().toISOString()
     };
 
+    StorageService.resetUserPassword(resetPassUser.id, trimmed, expiryMs, true);
     StorageService.saveUser(updatedUser);
     StorageService.addLog(
       'RESET_PASSWORD',
       `رمز عبور موقت برای کاربر ${updatedUser.firstName} ${updatedUser.lastName} (${updatedUser.username}) تعیین گردید.`
     );
+
+    setSavedCredentialsBanner({
+      username: updatedUser.username,
+      password: trimmed,
+      fullName: `${updatedUser.firstName} ${updatedUser.lastName}`,
+      isNew: false
+    });
 
     const msg = isPersian
       ? `رمز عبور موقت برای ${updatedUser.firstName} ${updatedUser.lastName} با موفقیت تنظیم شد.`
@@ -339,42 +349,79 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
       return;
     }
 
-    const trimmedPassword = password ? password.trim() : '';
-    const actualPassword = trimmedPassword || (editingUser ? (editingUser.passwordHash || 'Employee@2026') : 'Employee@2026');
-    // Expiry for temporary password
-    const expiryMs = trimmedPassword ? Date.now() + settings.tempPasswordExpiryMinutes * 60 * 1000 : undefined;
+    if (editingUser) {
+      // Editing existing user info: strictly preserve existing passwordHash and password state!
+      const latestExisting = StorageService.getUserById(editingUser.id) || editingUser;
+      const saved: User = {
+        ...latestExisting,
+        id: latestExisting.id,
+        username: currentUsername,
+        email: email.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        mobile: mobile.trim() || undefined,
+        jobTitle: jobTitle.trim() || undefined,
+        role,
+        groupIds,
+        isActive,
+        isArchived: false,
+        createdAt: registrationDate,
+        passwordHash: latestExisting.passwordHash || 'Employee@2026',
+        mustChangePassword: Boolean(latestExisting.mustChangePassword),
+        temporaryPasswordExpiry: latestExisting.temporaryPasswordExpiry,
+        avatar: latestExisting.avatar,
+        updatedAt: new Date().toISOString()
+      };
 
-    const saved: User = {
-      id: editingUser ? editingUser.id : `usr-${Date.now()}`,
-      username: currentUsername,
-      email: email.trim(),
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      mobile: mobile.trim() || undefined,
-      jobTitle: jobTitle.trim() || undefined,
-      role,
-      groupIds,
-      isActive,
-      isArchived: false,
-      mustChangePassword: editingUser ? (trimmedPassword ? true : editingUser.mustChangePassword) : true,
-      temporaryPasswordExpiry: trimmedPassword ? expiryMs : editingUser?.temporaryPasswordExpiry,
-      createdAt: registrationDate,
-      passwordHash: actualPassword
-    };
+      StorageService.saveUser(saved, { preservePassword: true });
+      StorageService.addLog(
+        'UPDATE_USER',
+        `اطلاعات کاربری ${saved.firstName} ${saved.lastName} (${saved.username}) بدون تغییر رمز عبور ویرایش گردید.`
+      );
 
-    StorageService.saveUser(saved);
-    StorageService.addLog(
-      editingUser ? 'UPDATE_USER' : 'CREATE_USER',
-      `کاربر ${saved.firstName} ${saved.lastName} (${saved.username}) ${editingUser ? 'ویرایش' : 'تعریف'} گردید.`
-    );
+      const msg = isPersian
+        ? `اطلاعات کاربر «${saved.firstName} ${saved.lastName}» بدون تغییر رمز عبور با موفقیت ذخیره شد.`
+        : `User ${saved.firstName} ${saved.lastName} updated without changing password.`;
+      setResetPassNotification(msg);
+      setTimeout(() => setResetPassNotification(null), 4000);
+    } else {
+      const trimmedPassword = password ? password.trim() : '';
+      const actualPassword = trimmedPassword || 'Employee@2026';
+      const expiryMs = Date.now() + settings.tempPasswordExpiryMinutes * 60 * 1000;
 
-    // Provide immediate banner with credentials for 1-click copy
-    setSavedCredentialsBanner({
-      username: saved.username,
-      password: actualPassword,
-      fullName: `${saved.firstName} ${saved.lastName}`,
-      isNew: !editingUser
-    });
+      const saved: User = {
+        id: `usr-${Date.now()}`,
+        username: currentUsername,
+        email: email.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        mobile: mobile.trim() || undefined,
+        jobTitle: jobTitle.trim() || undefined,
+        role,
+        groupIds,
+        isActive,
+        isArchived: false,
+        mustChangePassword: true,
+        temporaryPasswordExpiry: expiryMs,
+        createdAt: registrationDate,
+        passwordHash: actualPassword,
+        updatedAt: new Date().toISOString()
+      };
+
+      StorageService.saveUser(saved);
+      StorageService.addLog(
+        'CREATE_USER',
+        `کاربر ${saved.firstName} ${saved.lastName} (${saved.username}) تعریف گردید.`
+      );
+
+      // Provide immediate banner with credentials for 1-click copy on new user creation
+      setSavedCredentialsBanner({
+        username: saved.username,
+        password: actualPassword,
+        fullName: `${saved.firstName} ${saved.lastName}`,
+        isNew: true
+      });
+    }
 
     setIsModalOpen(false);
     reloadData();
@@ -893,19 +940,21 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                           </button>
 
                           <button
-                            onClick={() => handleOpenResetPass(u)}
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                            title={isPersian ? 'تعیین / تعویض رمز عبور موقت' : 'Set / Reset Temporary Password'}
-                          >
-                            <Key className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
                             onClick={() => handleOpenEdit(u)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-blue-600 bg-blue-50/70 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/60 border border-blue-200/80 dark:border-blue-800 rounded-lg transition-colors cursor-pointer text-[11px] font-bold"
                             title={t.edit}
                           >
                             <Edit2 className="w-3.5 h-3.5" />
+                            <span>{isPersian ? 'ویرایش' : 'Edit'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenResetPass(u)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/60 border border-amber-200/80 dark:border-amber-800 rounded-lg transition-colors cursor-pointer text-[11px] font-bold"
+                            title={isPersian ? 'تنظیم مجدد رمز عبور کاربر' : 'Reset User Password'}
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            <span>{isPersian ? 'تنظیم رمز' : 'Reset Pass'}</span>
                           </button>
 
                           {/* "هر کی نقش مدیر داره ... غیرقابل حذف" - Admins cannot be archived */}
@@ -1226,127 +1275,107 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                 </div>
               </div>
 
-              {/* Password field with Eye Toggle */}
-              {/* "فیلدهای رمز چشم داشته باشه" */}
-              <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-blue-600" />
-                    <span>{isPersian ? 'رمز عبور اولیه / موقت' : 'Initial / Temporary Password'}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPassword(generateStrongPassword())}
-                    className="text-[11px] text-blue-700 hover:underline font-semibold cursor-pointer"
-                  >
-                    {t.generateCredentials}
-                  </button>
-                </div>
-
-                <div className="relative flex items-center">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder={editingUser ? (isPersian ? 'برای تغییر ندادن خالی بگذارید' : 'Leave empty to keep current') : '••••••••'}
-                    className="w-full px-3 py-2 pl-10 rtl:pl-10 rtl:pr-3 bg-white border border-blue-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  />
-
-                  {/* Eye toggle button */}
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-2.5 rtl:left-2.5 rtl:right-auto ltr:right-2.5 ltr:left-auto p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    title={showPassword ? (isPersian ? 'مخفی‌سازی رمز' : 'Hide password') : (isPersian ? 'نمایش رمز عبور' : 'Show password')}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4 text-blue-600" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-
-                {password ? (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCopyPassword(password)}
-                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                        title={isPersian ? 'کپی فقط رمز عبور' : 'Copy password only'}
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>{isPersian ? 'کپی فقط رمز' : 'Copy Password'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleCopyCredentials(
-                            editingUser ? editingUser.username : username.trim() || email.trim(),
-                            password,
-                            `${firstName} ${lastName}`
-                          )
-                        }
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer transition-colors"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>{t.copyCredentials}</span>
-                      </button>
-
-                      <span className="text-[10px] text-blue-700 font-b-nazanin mr-auto rtl:mr-auto rtl:ml-0">
-                        {isPersian
-                          ? `معتبر به مدت ${settings.tempPasswordExpiryMinutes} دقیقه`
-                          : `Valid for ${settings.tempPasswordExpiryMinutes} min`}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-blue-800 font-b-nazanin pt-1">
-                      {isPersian
-                        ? 'رمز عبور کاربر در کادر بالا مشخص است. جهت تحویل به کاربر آن را یادداشت یا کپی فرمایید.'
-                        : 'Password is shown in the box above. Please copy or note it down for the user.'}
-                    </p>
-                  </div>
-                ) : editingUser ? (
-                  <div className="pt-1 space-y-1.5">
-                    <p className="text-[11px] text-slate-500 font-b-nazanin leading-relaxed">
-                      {isPersian
-                        ? 'رمز عبور قبلی کاربر بدون تغییر باقی می‌ماند. برای تنظیم رمز موقت جدید، در کادر بالا تایپ کنید یا روی «تولید اطلاعات ورود» کلیک نمایید.'
-                        : 'Current password remains unchanged. Type new password or click Generate to set a temporary one.'}
-                    </p>
+              {/* Password field ONLY shown when creating a NEW user (removed from Edit User modal per user request) */}
+              {!editingUser && (
+                <div className="p-3.5 bg-blue-50/60 border border-blue-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{isPersian ? 'رمز عبور اولیه / موقت' : 'Initial / Temporary Password'}</span>
+                    </span>
                     <button
                       type="button"
-                      onClick={() =>
-                        handleCopyCredentials(
-                          editingUser.username,
-                          '(رمز عبور اختصاصی کاربر)',
-                          `${firstName} ${lastName}`
-                        )
-                      }
-                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                      onClick={() => setPassword(generateStrongPassword())}
+                      className="text-[11px] text-blue-700 hover:underline font-semibold cursor-pointer"
                     >
-                      <Copy className="w-3 h-3" />
-                      <span>{isPersian ? 'کپی نام کاربری و آدرس ورود' : 'Copy Username & URL'}</span>
+                      {t.generateCredentials}
                     </button>
                   </div>
-                ) : (
-                  <div className="pt-1 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs space-y-1">
-                    <p className="font-semibold">
-                      {isPersian
-                        ? 'توجه: کادر رمز عبور خالی است؛ در این صورت رمز عبور پیش‌فرض Employee@2026 برای این کاربر ثبت می‌شود.'
-                        : 'Notice: Password field is empty; default password Employee@2026 will be assigned.'}
-                    </p>
-                  </div>
-                )}
 
-                {/* Inline confirmation badge when copied */}
-                {modalCopiedFeedback && (
-                  <div className="p-2 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{modalCopiedFeedback}</span>
+                  <div className="relative flex items-center">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 pl-10 rtl:pl-10 rtl:pr-3 bg-white border border-blue-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                    />
+
+                    {/* Eye toggle button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-2.5 rtl:left-2.5 rtl:right-auto ltr:right-2.5 ltr:left-auto p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      title={showPassword ? (isPersian ? 'مخفی‌سازی رمز' : 'Hide password') : (isPersian ? 'نمایش رمز عبور' : 'Show password')}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4 text-blue-600" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
-                )}
-              </div>
+
+                  {password ? (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPassword(password)}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                          title={isPersian ? 'کپی فقط رمز عبور' : 'Copy password only'}
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{isPersian ? 'کپی فقط رمز' : 'Copy Password'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyCredentials(
+                              username.trim() || email.trim(),
+                              password,
+                              `${firstName} ${lastName}`
+                            )
+                          }
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{t.copyCredentials}</span>
+                        </button>
+
+                        <span className="text-[10px] text-blue-700 font-b-nazanin mr-auto rtl:mr-auto rtl:ml-0">
+                          {isPersian
+                            ? `معتبر به مدت ${settings.tempPasswordExpiryMinutes} دقیقه`
+                            : `Valid for ${settings.tempPasswordExpiryMinutes} min`}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-blue-800 font-b-nazanin pt-1">
+                        {isPersian
+                          ? 'رمز عبور کاربر در کادر بالا مشخص است. جهت تحویل به کاربر آن را یادداشت یا کپی فرمایید.'
+                          : 'Password is shown in the box above. Please copy or note it down for the user.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="pt-1 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs space-y-1">
+                      <p className="font-semibold">
+                        {isPersian
+                          ? 'توجه: کادر رمز عبور خالی است؛ در این صورت رمز عبور پیش‌فرض Employee@2026 برای این کاربر ثبت می‌شود.'
+                          : 'Notice: Password field is empty; default password Employee@2026 will be assigned.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Inline confirmation badge when copied */}
+                  {modalCopiedFeedback && (
+                    <div className="p-2 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{modalCopiedFeedback}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Active Toggle */}
               <div className="flex items-center gap-2 pt-1">
@@ -1421,7 +1450,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
               </button>
             </div>
 
-            <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 space-y-1 font-b-nazanin">
+            <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 space-y-1.5 font-b-nazanin">
               <div>
                 <span className="font-bold">{isPersian ? 'ایمیل:' : 'Email:'} </span>
                 <span className="font-mono">{resetPassUser.email}</span>
@@ -1432,10 +1461,28 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                   <span className="font-mono">{resetPassUser.mobile}</span>
                 </div>
               )}
+              {resetPassUser.passwordHash && (
+                <div className="flex items-center justify-between pt-1 border-t border-blue-200/70">
+                  <div>
+                    <span className="font-bold">{isPersian ? 'رمز عبور فعلی در سیستم:' : 'Current Password:'} </span>
+                    <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-blue-200">
+                      {resetPassUser.passwordHash}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPassword(resetPassUser.passwordHash)}
+                    className="px-2 py-0.5 bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{isPersian ? 'کپی رمز فعلی' : 'Copy Current'}</span>
+                  </button>
+                </div>
+              )}
               <p className="text-[11px] text-blue-700 pt-1">
                 {isPersian
-                  ? `کاربر می‌تواند با نام کاربری (${resetPassUser.username}) یا ایمیل (${resetPassUser.email}) و این رمز عبور وارد شود. در بدو ورود ملزم به تغییر رمز خواهد بود.`
-                  : 'The user can log in with their username or email, and will be prompted to change password.'}
+                  ? `کاربر می‌تواند با نام کاربری (${resetPassUser.username}) یا ایمیل (${resetPassUser.email}) وارد شود.`
+                  : 'The user can log in with their username or email.'}
               </p>
             </div>
 
@@ -1456,6 +1503,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
               <div className="relative flex items-center">
                 <input
                   type={showResetPass ? 'text' : 'password'}
+                  autoComplete="new-password"
                   value={resetPassValue}
                   onChange={e => setResetPassValue(e.target.value)}
                   className="w-full px-3 py-2.5 pl-10 rtl:pl-10 rtl:pr-3 bg-white border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
