@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, AttendanceRecord, Project } from '../types';
+import { User, AttendanceRecord, Project, WorkRecordType } from '../types';
 import { translations, Language } from '../utils/translations';
-import { StorageService } from '../utils/storage';
+import { StorageService, getCustomTypeTitle } from '../utils/storage';
 import { formatMinutes, getCurrentJalaliParts, getTodayJalali, toPersianDigits, calculateFullDurationMinutes, formatDateWithWeekday } from '../utils/jalali';
 import { exportTableToPdfPrint, exportTableToExcel, ExportColumn } from '../utils/export';
 import { PersianDatePicker } from '../components/PersianDatePicker';
+import { TimePicker } from '../components/TimePicker';
 import {
   Clock,
   Briefcase,
@@ -79,7 +80,127 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [filterProjectId, setFilterProjectId] = useState<string>('all');
-  const [quickPeriod, setQuickPeriod] = useState<'thisMonth' | 'lastMonth' | 'all' | 'custom'>('thisMonth');
+  const [quickPeriod, setQuickPeriod] = useState<'thisMonth' | 'lastMonth' | 'all' | 'custom'>('all');
+
+  // Inline Quick Add Record Modal State
+  const settings = StorageService.getSettings();
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickAddType, setQuickAddType] = useState<WorkRecordType>('regular');
+  const [qStartDate, setQStartDate] = useState(today);
+  const [qStartTime, setQStartTime] = useState('08:30');
+  const [qEndDate, setQEndDate] = useState(today);
+  const [qEndTime, setQEndTime] = useState('16:30');
+  const [isQEndDateManuallySet, setIsQEndDateManuallySet] = useState(false);
+  const [qProjectId, setQProjectId] = useState('');
+  const [qLeaveType, setQLeaveType] = useState('مرخصی عادی');
+  const [qSpecialType, setQSpecialType] = useState('قطعی برق');
+  const [qMissionDestination, setQMissionDestination] = useState('');
+  const [qNotes, setQNotes] = useState('');
+  const [qError, setQError] = useState<string | null>(null);
+
+  const leaveTypeOptions = useMemo(() => {
+    const base = (settings.leaveTypes || []).map(lt => getCustomTypeTitle(lt, lang)).filter(Boolean);
+    const defaults = isPersian
+      ? ['مرخصی عادی', 'مرخصی استعلاجی', 'مرخصی مناسبتی', 'مرخصی تولد', 'مرخصی بدون حقوق', 'مرخصی ساعتی']
+      : ['Regular / Annual Leave', 'Sick Leave', 'Casual / Occasion Leave', 'Birthday Leave', 'Unpaid Leave', 'Hourly Leave'];
+    return Array.from(new Set([...base, ...defaults]));
+  }, [settings.leaveTypes, lang, isPersian]);
+
+  const specialTypeOptions = useMemo(() => {
+    const base = (settings.specialWorkTypes || []).map(st => getCustomTypeTitle(st, lang)).filter(Boolean);
+    const defaults = isPersian
+      ? ['قطعی برق', 'اختلال شبکه و ارتباطات', 'تعطیلی اضطراری / شرایط جوی', 'سایر']
+      : ['Power Outage', 'Network & System Disruption', 'Emergency / Weather Closure', 'Other'];
+    return Array.from(new Set([...base, ...defaults]));
+  }, [settings.specialWorkTypes, lang, isPersian]);
+
+  const handleOpenQuickAdd = (type: WorkRecordType) => {
+    const currentToday = getTodayJalali();
+    setQuickAddType(type);
+    setQStartDate(currentToday);
+    setQStartTime('08:30');
+    setQEndDate(currentToday);
+    setQEndTime('16:30');
+    setIsQEndDateManuallySet(false);
+    const firstActive = availableProjects.find(p => p.isActive);
+    setQProjectId(firstActive ? firstActive.id : '');
+    setQLeaveType(leaveTypeOptions[0] || 'مرخصی عادی');
+    setQSpecialType(specialTypeOptions[0] || 'قطعی برق');
+    setQMissionDestination('');
+    setQNotes('');
+    setQError(null);
+    setIsQuickAddOpen(true);
+  };
+
+  const handleSaveQuickAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    const duration = calculateFullDurationMinutes(qStartDate, qStartTime, qEndDate, qEndTime);
+    if (duration <= 0) {
+      setQError(
+        isPersian
+          ? 'تاریخ و ساعت پایان باید بعد از تاریخ و ساعت شروع باشد.'
+          : 'End date & time must be strictly after start date & time.'
+      );
+      return;
+    }
+
+    if ((quickAddType === 'regular' || quickAddType === 'mission') && qProjectId) {
+      const targetPrj = projectsList.find(p => p.id === qProjectId);
+      if (targetPrj && !targetPrj.isActive) {
+        setQError(
+          isPersian
+            ? 'این پروژه غیرفعال است و امکان ثبت ساعت جدید برای آن وجود ندارد.'
+            : 'This project is inactive and cannot accept new work hours.'
+        );
+        return;
+      }
+    }
+
+    const selectedLeave = settings.leaveTypes.find(
+      lt => getCustomTypeTitle(lt, lang) === qLeaveType ||
+            (typeof lt === 'object' && (lt.titleFa === qLeaveType || lt.titleEn === qLeaveType))
+    );
+    const selectedSpecial = settings.specialWorkTypes.find(
+      st => getCustomTypeTitle(st, lang) === qSpecialType ||
+            (typeof st === 'object' && (st.titleFa === qSpecialType || st.titleEn === qSpecialType))
+    );
+
+    const newRecord: AttendanceRecord = {
+      id: `rec-${Date.now()}`,
+      userId: user.id,
+      type: quickAddType,
+      startDate: qStartDate,
+      startTime: qStartTime,
+      endDate: qEndDate,
+      endTime: qEndTime,
+      date: qStartDate,
+      durationMinutes: duration,
+      projectId: (quickAddType === 'regular' || quickAddType === 'mission') ? (qProjectId || undefined) : undefined,
+      leaveTypeId: quickAddType === 'leave' && selectedLeave && typeof selectedLeave === 'object' ? selectedLeave.id : undefined,
+      leaveType: quickAddType === 'leave' ? qLeaveType : undefined,
+      specialWorkTypeId: quickAddType === 'special' && selectedSpecial && typeof selectedSpecial === 'object' ? selectedSpecial.id : undefined,
+      specialWorkType: quickAddType === 'special' ? qSpecialType : undefined,
+      missionDestination: quickAddType === 'mission' ? qMissionDestination : undefined,
+      notes: qNotes,
+      createdAt: getTodayJalali(),
+      updatedAt: new Date().toISOString()
+    };
+
+    StorageService.saveAttendanceRecord(newRecord);
+    StorageService.addLog(
+      'CREATE_ATTENDANCE',
+      `ثبت سریع رکورد نوع ${quickAddType} از ${qStartDate} ${qStartTime} تا ${qEndDate} ${qEndTime} به مدت ${formatMinutes(duration, isPersian)}`
+    );
+
+    setRecordsList(StorageService.getAttendanceRecords());
+    setIsQuickAddOpen(false);
+    setImportSuccessNotice(
+      isPersian
+        ? `رکورد ${quickAddType === 'regular' ? t.regularWork : quickAddType === 'leave' ? t.leaveRecord : quickAddType === 'mission' ? t.missionRecord : t.specialWorkRecord} با موفقیت ثبت شد.`
+        : 'Record saved successfully.'
+    );
+    setTimeout(() => setImportSuccessNotice(null), 4000);
+  };
 
   // Table sorting
   const [sortField, setSortField] = useState<'date' | 'type' | 'project' | 'duration'>('date');
@@ -641,7 +762,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {!isAdmin ? (
               <div className="space-y-2.5">
                 <button
-                  onClick={() => onNavigateTab('attendance')}
+                  type="button"
+                  onClick={() => handleOpenQuickAdd('regular')}
                   className="w-full py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center justify-between transition-colors border border-blue-200 cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
@@ -652,7 +774,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigateTab('missions')}
+                  type="button"
+                  onClick={() => handleOpenQuickAdd('mission')}
                   className="w-full py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-between transition-colors border border-indigo-200 cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
@@ -663,7 +786,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigateTab('leaves')}
+                  type="button"
+                  onClick={() => handleOpenQuickAdd('leave')}
                   className="w-full py-2.5 px-3 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs rounded-xl flex items-center justify-between transition-colors border border-amber-200 cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
@@ -674,7 +798,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigateTab('special')}
+                  type="button"
+                  onClick={() => handleOpenQuickAdd('special')}
                   className="w-full py-2.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl flex items-center justify-between transition-colors border border-rose-200 cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
@@ -749,7 +874,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-b-nazanin">
-              {sortedRecords.slice(0, 15).map(record => {
+              {sortedRecords.map(record => {
                 const prj = allProjects.find(p => p.id === record.projectId);
                 const recUser = allUsers.find(u => u.id === record.userId);
 
@@ -760,7 +885,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {recUser ? `${recUser.firstName} ${recUser.lastName}` : record.userId}
                       </td>
                     )}
-                    <td className="p-3 text-slate-700 font-b-mitra text-xs font-semibold">
+                    <td className="p-3 text-slate-700 font-b-mitra text-xs font-semibold text-right">
                       {isPersian ? formatDateWithWeekday(record.startDate || record.date) : (record.startDate || record.date)}
                     </td>
                     <td className="p-3">
@@ -788,8 +913,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <td className="p-3 font-medium text-slate-800">
                       {prj ? prj.title : '-'}
                     </td>
-                    <td className="p-3 text-slate-800 font-b-mitra font-time text-sm font-bold" dir="ltr">{toPersianDigits(record.startTime)}</td>
-                    <td className="p-3 text-slate-800 font-b-mitra font-time text-sm font-bold" dir="ltr">{toPersianDigits(record.endTime)}</td>
+                    <td className="p-3 text-slate-800 font-b-mitra font-time text-sm font-bold text-right">
+                      <span dir="ltr" className="inline-block">{toPersianDigits(record.startTime)}</span>
+                    </td>
+                    <td className="p-3 text-slate-800 font-b-mitra font-time text-sm font-bold text-right">
+                      <span dir="ltr" className="inline-block">{toPersianDigits(record.endTime)}</span>
+                    </td>
                     <td className="p-3 font-b-mitra font-time font-bold text-slate-900 text-sm">
                       {formatMinutes(record.durationMinutes, isPersian)}
                     </td>
@@ -811,6 +940,223 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Inline Quick Add Record Modal */}
+      {isQuickAddOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+        >
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                {quickAddType === 'regular' && <Clock className="w-5 h-5 text-blue-600" />}
+                {quickAddType === 'mission' && <Briefcase className="w-5 h-5 text-indigo-600" />}
+                {quickAddType === 'leave' && <CalendarCheck className="w-5 h-5 text-amber-600" />}
+                {quickAddType === 'special' && <Zap className="w-5 h-5 text-rose-600" />}
+                <h3 className="font-bold text-base text-slate-800">
+                  {t.addRecord} -{' '}
+                  {quickAddType === 'regular'
+                    ? t.regularWork
+                    : quickAddType === 'mission'
+                    ? t.missionRecord
+                    : quickAddType === 'leave'
+                    ? t.leaveRecord
+                    : t.specialWorkRecord}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickAddOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {qError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg font-b-nazanin">
+                {qError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveQuickAdd} className="space-y-4">
+              {/* Start Date and Start Time */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{isPersian ? 'شروع (تاریخ و ساعت):' : 'Start (Date & Time):'}</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <PersianDatePicker
+                    value={qStartDate}
+                    onChange={(newDate) => {
+                      setQStartDate(newDate);
+                      if (!isQEndDateManuallySet) {
+                        setQEndDate(newDate);
+                      }
+                    }}
+                    label={isPersian ? 'تاریخ شروع' : 'Start Date'}
+                    required
+                    isPersian={isPersian}
+                  />
+                  <TimePicker
+                    value={qStartTime}
+                    onChange={setQStartTime}
+                    label={isPersian ? 'ساعت شروع' : 'Start Time'}
+                    required
+                    isPersian={isPersian}
+                  />
+                </div>
+              </div>
+
+              {/* End Date and End Time */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{isPersian ? 'پایان (تاریخ و ساعت):' : 'End (Date & Time):'}</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <PersianDatePicker
+                    value={qEndDate}
+                    onChange={(newDate) => {
+                      setQEndDate(newDate);
+                      setIsQEndDateManuallySet(true);
+                    }}
+                    label={isPersian ? 'تاریخ پایان' : 'End Date'}
+                    required
+                    isPersian={isPersian}
+                  />
+                  <TimePicker
+                    value={qEndTime}
+                    onChange={setQEndTime}
+                    label={isPersian ? 'ساعت پایان' : 'End Time'}
+                    required
+                    isPersian={isPersian}
+                  />
+                </div>
+              </div>
+
+              {/* Calculated duration display */}
+              <div className="p-2.5 bg-blue-50/70 border border-blue-100 rounded-lg text-xs flex justify-between items-center font-b-nazanin">
+                <span className="text-blue-700 font-semibold">{t.durationCol}:</span>
+                <span className="font-bold text-blue-900 text-sm font-b-mitra">
+                  {formatMinutes(calculateFullDurationMinutes(qStartDate, qStartTime, qEndDate, qEndTime), isPersian)}
+                </span>
+              </div>
+
+              {/* Project selector for regular, mission */}
+              {(quickAddType === 'regular' || quickAddType === 'mission') && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t.projectCol} {quickAddType === 'regular' && <span className="text-red-500">*</span>}
+                  </label>
+                  <select
+                    value={qProjectId}
+                    onChange={e => setQProjectId(e.target.value)}
+                    required={quickAddType === 'regular'}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  >
+                    <option value="">{isPersian ? 'انتخاب پروژه...' : 'Select project...'}</option>
+                    {availableProjects.map(p => (
+                      <option key={p.id} value={p.id} disabled={!p.isActive}>
+                        {p.title} {!p.isActive ? `(${t.inactiveStatus} - غیرقابل ثبت)` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Leave Type */}
+              {quickAddType === 'leave' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {isPersian ? 'نوع مرخصی' : 'Leave Type'} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={qLeaveType}
+                    onChange={e => setQLeaveType(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  >
+                    {leaveTypeOptions.map(title => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Special Work Type */}
+              {quickAddType === 'special' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {isPersian ? 'نوع کارکرد خاص' : 'Special Work Type'} <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={qSpecialType}
+                    onChange={e => setQSpecialType(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  >
+                    {specialTypeOptions.map(title => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Mission Destination */}
+              {quickAddType === 'mission' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {isPersian ? 'مقصد یا هدف ماموریت' : 'Mission Destination / Purpose'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={qMissionDestination}
+                    onChange={e => setQMissionDestination(e.target.value)}
+                    placeholder={isPersian ? 'مثال: دفتر کارفرما، بازدید فنی...' : 'e.g. Client headquarters'}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  />
+                </div>
+              )}
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {t.notesCol} <span className="text-slate-400 font-normal">({t.optional})</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={qNotes}
+                  onChange={e => setQNotes(e.target.value)}
+                  placeholder={isPersian ? 'شرح مختصری از اقدامات انجام‌شده...' : 'Brief description of activity...'}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  {t.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Excel / CSV Import Modal */}
       <ExcelImportModal

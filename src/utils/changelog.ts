@@ -1,8 +1,30 @@
 import { ChangelogItem } from '../types';
 
-export const APP_CURRENT_VERSION = 'v2.0.9';
+export const APP_CURRENT_VERSION = 'v2.0.13';
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: 'v2.0.13',
+    releaseDate: '2026-10-21',
+    releaseDateFa: '۱۴۰۵/۰۷/۲۹',
+    titleFa: 'رفع کامل بازگشت پروژه‌ها، تثبیت توقف ثبت زنده، دیالوگ ثبت سریع در داشبورد، ارتقای تم دارک و خروجی اکسل با فونت B Mitra',
+    titleEn: 'Permanent Project Sync & Deletion, Reliable Live Tracker Stop, Inline Quick-Add Modal in Dashboard, Dark Mode Overhaul & B Mitra RTL Excel Export',
+    changesFa: [
+      'رفع کامل مشکل بازگشت نام قبلی یا پروژه‌های حذف‌شده با همگام‌سازی مبتنی بر زمان (Timestamp) و ثبت دائمی شناسه‌های حذف‌شده در سرور',
+      'توقف قطعی و فوری تایمر ثبت کارکرد زنده هنگام کلیک بر روی پایان و جلوگیری از بازگشت تایمر در همگام‌سازی‌های همزمان',
+      'باز شدن مستقیم دیالوگ ثبت کارکرد (عادی، مرخصی، ماموریت، خاص) در همان صفحه داشبورد اختصاصی و نمایش کامل تمامی رکوردها بدون محدودیت ۱۵ تایی',
+      'همگام‌سازی هوشمند تاریخ پایان با تاریخ شروع هنگام ثبت رکورد مگر در صورت تغییر دستی تاریخ پایان توسط کاربر',
+      'رفع مشکل عدم ذخیره ویرایش سطرهای کارکرد مرخصی و اصلاح جابجایی ستون‌های تاریخ و ساعت در جداول و بارگذاری اکسل',
+      'بازطراحی جامع تم دارک برای کنتراست عالی دکمه‌ها و کارت‌ها، جایگزینی ایموجی‌های آواتار با ایموجی‌های استاندارد جذاب، و اعمال فونت B Mitra و جهت راست‌به‌چپ واقعی در خروجی اکسل'
+    ],
+    changesEn: [
+      'Fixed deleted or renamed projects reverting by enforcing server-side timestamp merging and persistent deleted ID broadcasting',
+      'Fixed live work tracker continuing after stop by recording stopped timer timestamps across sync endpoints',
+      'Opened inline record creation modals directly inside Personal Dashboard Quick Actions and displayed all user records without truncation',
+      'Auto-synced End Date with Start Date during record creation unless manually overridden by the user',
+      'Fixed leave record editing persistence, column alignment for dates/times, Dark Mode styling, standard emoji avatars, and B Mitra RTL Excel exports'
+    ]
+  },
   {
     version: 'v2.0.9',
     releaseDate: '2026-10-20',

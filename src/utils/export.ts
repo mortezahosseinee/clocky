@@ -16,23 +16,36 @@ export function exportTableToExcel(
   data: any[],
   isPersian = true
 ) {
+  const hasPersianChars = (str: string) => /[\u0600-\u06FF]/.test(str);
+
   // Map data to ordered rows matching column headers
-  const rows = data.map(item => {
+  const rows = data.map((item, idx) => {
     const rowObj: Record<string, any> = {};
+    if (isPersian) {
+      rowObj['ردیف'] = idx + 1;
+    }
     columns.forEach(col => {
       let val = item[col.key];
       if (col.format) {
         val = col.format(val, item);
       }
-      rowObj[col.header] = val ?? '-';
+      let strVal = val !== undefined && val !== null && val !== '' ? String(val) : '-';
+      if (isPersian && hasPersianChars(strVal) && !strVal.startsWith('\u200F')) {
+        strVal = `\u200F${strVal}`;
+      }
+      rowObj[col.header] = strVal;
     });
     return rowObj;
   });
 
   const worksheet = XLSX.utils.json_to_sheet(rows);
 
-  // Set column widths
-  worksheet['!cols'] = columns.map(c => ({ wch: c.width || 18 }));
+  // Set column widths (including row index column if Persian)
+  const colWidths = columns.map(c => ({ wch: Math.max(c.width || 18, 14) }));
+  if (isPersian) {
+    colWidths.unshift({ wch: 8 });
+  }
+  worksheet['!cols'] = colWidths;
 
   // Set Right-to-Left sheet view for Persian
   if (isPersian) {
@@ -41,9 +54,93 @@ export function exportTableToExcel(
   }
 
   const workbook = XLSX.utils.book_new();
+  if (!workbook.Workbook) workbook.Workbook = {};
+  if (!workbook.Workbook.Views) workbook.Workbook.Views = [];
+  if (isPersian) {
+    workbook.Workbook.Views[0] = { RTL: true };
+  }
+
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.substring(0, 31));
 
-  XLSX.writeFile(workbook, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
+  const finalFilename = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
+
+  try {
+    const rawBuf = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+    const cfb = (XLSX as any).CFB;
+    if (cfb && typeof TextDecoder !== 'undefined' && typeof TextEncoder !== 'undefined') {
+      const zip = cfb.read(new Uint8Array(rawBuf), { type: 'array' });
+      const dec = new TextDecoder();
+      const enc = new TextEncoder();
+      const fontName = isPersian ? 'B Mitra' : 'Times New Roman';
+      const alignDir = isPersian
+        ? '<alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/>'
+        : '<alignment horizontal="left" vertical="center" readingOrder="1" wrapText="1"/>';
+
+      const stylesEntry = cfb.find(zip, '/xl/styles.xml');
+      if (stylesEntry && stylesEntry.content) {
+        let stylesXml = dec.decode(new Uint8Array(stylesEntry.content));
+        stylesXml = stylesXml
+          .replace(/<name val="Calibri"\/>/g, `<name val="${fontName}"/>`)
+          .replace(/<sz val="12"\/>/g, '<sz val="12"/><b val="0"/>')
+          .replace(/<scheme val="minor"\/>/g, '')
+          .replace(
+            /<cellStyleXfs count="1"><xf([^>]*)\/><\/cellStyleXfs>/g,
+            `<cellStyleXfs count="1"><xf$1 applyFont="1" applyAlignment="1">${alignDir}</xf></cellStyleXfs>`
+          )
+          .replace(
+            /<cellXfs count="1"><xf([^>]*)\/><\/cellXfs>/g,
+            `<cellXfs count="1"><xf$1 applyFont="1" applyAlignment="1">${alignDir}</xf></cellXfs>`
+          );
+        const encodedStyles = enc.encode(stylesXml);
+        stylesEntry.content = Array.from(encodedStyles);
+        stylesEntry.size = encodedStyles.length;
+      }
+
+      const themeEntry = cfb.find(zip, '/xl/theme/theme1.xml');
+      if (themeEntry && themeEntry.content) {
+        let themeXml = dec
+          .decode(new Uint8Array(themeEntry.content))
+          .replace(/Calibri/g, fontName)
+          .replace(/Cambria/g, fontName);
+        const encodedTheme = enc.encode(themeXml);
+        themeEntry.content = Array.from(encodedTheme);
+        themeEntry.size = encodedTheme.length;
+      }
+
+      const sheetEntry = cfb.find(zip, '/xl/worksheets/sheet1.xml');
+      if (sheetEntry && sheetEntry.content) {
+        let sheetXml = dec.decode(new Uint8Array(sheetEntry.content));
+        if (isPersian && !sheetXml.includes('rightToLeft="1"')) {
+          sheetXml = sheetXml.replace('<sheetView ', '<sheetView rightToLeft="1" ');
+        }
+        // Explicitly bind style index 0 (B Mitra + RTL) to every cell
+        sheetXml = sheetXml.replace(/<c r="([A-Z0-9]+)"(?![^>]*\bs=)/g, '<c r="$1" s="0"');
+        const encodedSheet = enc.encode(sheetXml);
+        sheetEntry.content = Array.from(encodedSheet);
+        sheetEntry.size = encodedSheet.length;
+      }
+
+      const outArray = cfb.write(zip, { fileType: 'zip', type: 'array' });
+      const blob = new Blob([new Uint8Array(outArray)], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = finalFilename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 200);
+      return;
+    }
+  } catch (err) {
+    console.warn('Excel style injection fallback:', err);
+  }
+
+  XLSX.writeFile(workbook, finalFilename);
 }
 
 export function exportTableToPdfPrint(

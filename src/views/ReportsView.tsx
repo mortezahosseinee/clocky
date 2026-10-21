@@ -944,17 +944,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ user, lang }) => {
                       <td className="p-3 font-bold text-slate-900">
                         {u ? `${u.firstName} ${u.lastName}` : r.userId}
                       </td>
-                      <td className="p-3 text-slate-700 font-b-mitra text-xs font-semibold">
+                      <td className="p-3 text-slate-700 font-b-mitra text-xs font-semibold text-right">
                         {isPersian ? formatDateWithWeekday(r.startDate || r.date) : (r.startDate || r.date)}
                       </td>
-                      <td className="p-3 text-slate-800 font-b-mitra font-time font-bold text-sm" dir="ltr">
-                        {isPersian ? toPersianDigits(r.startTime) : r.startTime}
+                      <td className="p-3 text-slate-800 font-b-mitra font-time font-bold text-sm text-right">
+                        <span dir="ltr" className="inline-block">{isPersian ? toPersianDigits(r.startTime) : r.startTime}</span>
                       </td>
-                      <td className="p-3 text-slate-700 font-b-mitra text-xs font-semibold">
+                      <td className="p-3 text-slate-700 font-b-mitra text-xs font-semibold text-right">
                         {isPersian ? formatDateWithWeekday(r.endDate || r.startDate || r.date) : (r.endDate || r.startDate || r.date)}
                       </td>
-                      <td className="p-3 text-slate-800 font-b-mitra font-time font-bold text-sm" dir="ltr">
-                        {isPersian ? toPersianDigits(r.endTime) : r.endTime}
+                      <td className="p-3 text-slate-800 font-b-mitra font-time font-bold text-sm text-right">
+                        <span dir="ltr" className="inline-block">{isPersian ? toPersianDigits(r.endTime) : r.endTime}</span>
                       </td>
                       <td className="p-3">
                         {r.type === 'regular' && (

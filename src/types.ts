@@ -55,6 +55,7 @@ export interface Group {
   description?: string;
   memberUserIds: string[];
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Project {
@@ -64,6 +65,7 @@ export interface Project {
   groupIds: string[];
   isActive: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AttendanceRecord {

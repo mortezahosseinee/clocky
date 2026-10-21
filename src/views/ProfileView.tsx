@@ -580,14 +580,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, lang, onUserUpda
               </div>
             </div>
 
-            {/* Predefined Cartoon Avatars Grid */}
+            {/* Predefined Emoji Avatars Grid */}
             <div className="pt-4 border-t border-slate-100 space-y-3">
               <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>{isPersian ? 'آواتارهای کارتونی متنوع و جذاب:' : 'Cartoon Character Avatars:'}</span>
+                <span>{isPersian ? 'ایموجی‌های جذاب برای تصویر نمایه:' : 'Attractive Emoji Avatars:'}</span>
               </label>
 
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2.5">
+              <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 gap-2.5">
                 {DEFAULT_AVATAR_PRESETS.map((preset) => {
                   const isSelected = currentUserData.avatar === preset.dataUrl;
 
@@ -596,18 +596,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, lang, onUserUpda
                       key={preset.id}
                       type="button"
                       onClick={() => handleSelectPresetAvatar(preset.dataUrl)}
-                      className={`group relative p-1.5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                      className={`group relative p-2 rounded-2xl border-2 transition-all cursor-pointer flex flex-col items-center gap-1.5 ${
                         isSelected
                           ? 'border-blue-600 bg-blue-50/60 shadow-xs ring-2 ring-blue-300 scale-105'
                           : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 hover:scale-102'
                       }`}
                       title={preset.nameFa}
                     >
-                      <img
-                        src={preset.dataUrl}
-                        alt={preset.nameFa}
-                        className="w-12 h-12 rounded-xl object-contain"
-                      />
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center shadow-xs select-none"
+                        style={{ backgroundColor: (preset as any).bgColor || '#2563EB' }}
+                      >
+                        <span className="text-2xl leading-none" role="img" aria-label={preset.nameFa}>
+                          {(preset as any).emoji || '😎'}
+                        </span>
+                      </div>
                       <span className="text-[10px] text-slate-600 truncate max-w-full font-b-nazanin font-semibold">
                         {isPersian ? preset.nameFa : preset.nameEn}
                       </span>

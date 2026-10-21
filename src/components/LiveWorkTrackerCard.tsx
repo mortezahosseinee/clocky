@@ -72,6 +72,13 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
   // Sync state from storage
   const applyTimerData = (t: any) => {
     if (t && t.isRunning && t.startTs) {
+      const stoppedTs = Number(localStorage.getItem(`attendance_stopped_timer_ts_${user.id}`) || '0');
+      if (stoppedTs && Number(t.startTs) <= stoppedTs) {
+        setTimerRunning(false);
+        setTimerStartTs(null);
+        setSecondsElapsed(0);
+        return;
+      }
       setTimerRunning(true);
       setTimerStartTs(t.startTs);
       setTimerStartTimeStr(t.startTimeStr || '');
@@ -96,16 +103,25 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     fetch(`/api/active-timer/${user.id}`)
       .then(res => res.json())
       .then(data => {
-        if (data && data.activeTimer) {
+        if (data && data.activeTimer && data.activeTimer.isRunning && data.activeTimer.startTs) {
+          const stoppedTs = Number(localStorage.getItem(`attendance_stopped_timer_ts_${user.id}`) || '0');
+          if (stoppedTs && Number(data.activeTimer.startTs) <= stoppedTs) {
+            StorageService.clearActiveTimer(user.id);
+            applyTimerData(null);
+            return;
+          }
           StorageService.setActiveTimer(user.id, data.activeTimer);
           applyTimerData(data.activeTimer);
+        } else if (data && data.activeTimer === null) {
+          localStorage.removeItem(`attendance_live_timer_${user.id}`);
+          applyTimerData(null);
         }
       })
       .catch(() => {});
 
     // Listen to local sync events between Dashboard and WorkRecordsView
     const handleTimerSync = (e: any) => {
-      if (e.detail) {
+      if (e && 'detail' in e) {
         applyTimerData(e.detail);
       } else {
         const current = StorageService.getActiveTimer(user.id);
@@ -115,10 +131,12 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
 
     window.addEventListener('active_timer_sync', handleTimerSync);
     window.addEventListener('storage', handleTimerSync);
+    window.addEventListener('app_storage_synced', handleTimerSync);
 
     return () => {
       window.removeEventListener('active_timer_sync', handleTimerSync);
       window.removeEventListener('storage', handleTimerSync);
+      window.removeEventListener('app_storage_synced', handleTimerSync);
     };
   }, [user.id]);
 
@@ -182,8 +200,9 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
   const commitFinalizeRecord = (finalProjectId?: string) => {
     if (!timerRunning || !timerStartTs) return;
 
+    const stoppedStartTs = timerStartTs;
     // Calculate elapsed duration strictly from start timestamp, independent of device timezone
-    const elapsedSeconds = Math.max(1, Math.floor((Date.now() - timerStartTs) / 1000));
+    const elapsedSeconds = Math.max(1, Math.floor((Date.now() - stoppedStartTs) / 1000));
     const durationMins = Math.max(1, Math.round(elapsedSeconds / 60));
 
     // Calculate end time and end date purely by adding duration to start time (100% timezone independent)
@@ -199,6 +218,20 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       finalNotes = finalNotes ? `${finalNotes} (${isPersian ? 'بدون پروژه' : 'No Project'})` : (isPersian ? 'بدون پروژه' : 'No Project');
     }
 
+    // CRITICAL: Clear active timer FIRST before saving attendance record so pushToServer() never sends a running timer back!
+    try {
+      localStorage.setItem(`attendance_stopped_timer_ts_${user.id}`, String(stoppedStartTs));
+    } catch {}
+    setTimerRunning(false);
+    setTimerStartTs(null);
+    setSecondsElapsed(0);
+    setTimerProjectId('');
+    setTimerNotes('');
+    setIsMissingProjectModalOpen(false);
+
+    StorageService.clearActiveTimer(user.id);
+    window.dispatchEvent(new CustomEvent('active_timer_sync', { detail: null }));
+
     const newRecord: AttendanceRecord = {
       id: `rec-${Date.now()}`,
       userId: user.id,
@@ -211,7 +244,8 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       durationMinutes: durationMins,
       projectId: finalProjectId || undefined,
       notes: finalNotes || (isPersian ? 'ثبت کارکرد' : 'Work record tracked'),
-      createdAt: getTodayJalali()
+      createdAt: getTodayJalali(),
+      updatedAt: new Date().toISOString()
     };
 
     StorageService.saveAttendanceRecord(newRecord);
@@ -219,16 +253,6 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       'CREATE_ATTENDANCE',
       `ثبت کارکرد از ${timerStartDateStr} ${timerStartTimeStr} تا ${endDateStr} ${endTimeStr} (${formatMinutes(durationMins, isPersian)}) [${prjName}]`
     );
-
-    StorageService.clearActiveTimer(user.id);
-    window.dispatchEvent(new CustomEvent('active_timer_sync', { detail: null }));
-
-    setTimerRunning(false);
-    setTimerStartTs(null);
-    setSecondsElapsed(0);
-    setTimerProjectId('');
-    setTimerNotes('');
-    setIsMissingProjectModalOpen(false);
 
     setTimerSuccessNotice(
       isPersian
@@ -238,10 +262,6 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
 
     if (onRecordSaved) {
       onRecordSaved();
-    }
-
-    if (onNavigateTab) {
-      onNavigateTab('attendance');
     }
   };
 

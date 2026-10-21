@@ -39,8 +39,15 @@ if (process.env.SQL_HOST) {
     pgPool.on('error', (err) => {
       console.warn('PostgreSQL client notice (using file fallback):', err.message);
     });
-    // Ensure avatar column exists in database
+    // Ensure avatar and updated_at columns exist in database
     pgPool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;').catch(() => {});
+    pgPool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS updated_at_iso VARCHAR(64);').catch(() => {});
+    pgPool.query('ALTER TABLE groups ADD COLUMN IF NOT EXISTS updated_at_iso VARCHAR(64);').catch(() => {});
+    pgPool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS start_date VARCHAR(20);').catch(() => {});
+    pgPool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS end_date VARCHAR(20);').catch(() => {});
+    pgPool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS leave_type_id VARCHAR(64);').catch(() => {});
+    pgPool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS special_work_type_id VARCHAR(64);').catch(() => {});
+    pgPool.query('ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS updated_at_iso VARCHAR(64);').catch(() => {});
     // Ensure chat_messages table exists in database
     pgPool.query(`
       CREATE TABLE IF NOT EXISTS chat_messages (
@@ -66,6 +73,14 @@ if (process.env.SQL_HOST) {
 
 // Get synced shared data across all clients
 app.get('/api/sync', async (req, res) => {
+  let existingFile: any = {};
+  if (fs.existsSync(dbFile)) {
+    try { existingFile = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch { existingFile = {}; }
+  }
+  const deletedProjectIds: string[] = Array.isArray(existingFile.deletedProjectIds) ? existingFile.deletedProjectIds : [];
+  const deletedGroupIds: string[] = Array.isArray(existingFile.deletedGroupIds) ? existingFile.deletedGroupIds : [];
+  const deletedAttendanceIds: string[] = Array.isArray(existingFile.deletedAttendanceIds) ? existingFile.deletedAttendanceIds : [];
+
   // 1. Try reading from PostgreSQL if available
   if (pgPool) {
     try {
@@ -96,39 +111,52 @@ app.get('/api/sync', async (req, res) => {
           avatar: r.avatar || undefined
         }));
 
-        const groups = groupsRes.rows.map(r => ({
-          id: r.id,
-          name: r.name,
-          description: r.description || '',
-          memberUserIds: Array.isArray(r.member_user_ids) ? r.member_user_ids : (typeof r.member_user_ids === 'string' ? JSON.parse(r.member_user_ids || '[]') : []),
-          createdAt: r.created_at
-        }));
+        const groups = groupsRes.rows
+          .filter(r => !deletedGroupIds.includes(r.id))
+          .map(r => ({
+            id: r.id,
+            name: r.name,
+            description: r.description || '',
+            memberUserIds: Array.isArray(r.member_user_ids) ? r.member_user_ids : (typeof r.member_user_ids === 'string' ? JSON.parse(r.member_user_ids || '[]') : []),
+            createdAt: r.created_at,
+            updatedAt: r.updated_at_iso || undefined
+          }));
 
-        const projects = projectsRes.rows.map(r => ({
-          id: r.id,
-          title: r.title,
-          description: r.description || '',
-          groupIds: Array.isArray(r.group_ids) ? r.group_ids : (typeof r.group_ids === 'string' ? JSON.parse(r.group_ids || '[]') : []),
-          isActive: r.is_active !== false,
-          createdAt: r.created_at
-        }));
+        const projects = projectsRes.rows
+          .filter(r => !deletedProjectIds.includes(r.id))
+          .map(r => ({
+            id: r.id,
+            title: r.title,
+            description: r.description || '',
+            groupIds: Array.isArray(r.group_ids) ? r.group_ids : (typeof r.group_ids === 'string' ? JSON.parse(r.group_ids || '[]') : []),
+            isActive: r.is_active !== false,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at_iso || undefined
+          }));
 
-        const attendance = attRes.rows.map(r => ({
-          id: r.id,
-          userId: r.user_id,
-          type: r.type,
-          projectId: r.project_id || undefined,
-          date: r.date,
-          gregorianDate: r.gregorian_date,
-          startTime: r.start_time,
-          endTime: r.end_time,
-          durationMinutes: r.duration_minutes || 0,
-          leaveType: r.leave_type || undefined,
-          specialWorkType: r.special_work_type || undefined,
-          missionDestination: r.mission_destination || undefined,
-          notes: r.notes || undefined,
-          createdAt: r.created_at
-        }));
+        const attendance = attRes.rows
+          .filter(r => !deletedAttendanceIds.includes(r.id))
+          .map(r => ({
+            id: r.id,
+            userId: r.user_id,
+            type: r.type,
+            projectId: r.project_id || undefined,
+            date: r.date,
+            startDate: r.start_date || r.date,
+            endDate: r.end_date || r.start_date || r.date,
+            gregorianDate: r.gregorian_date,
+            startTime: r.start_time,
+            endTime: r.end_time,
+            durationMinutes: r.duration_minutes || 0,
+            leaveType: r.leave_type || undefined,
+            leaveTypeId: r.leave_type_id || undefined,
+            specialWorkType: r.special_work_type || undefined,
+            specialWorkTypeId: r.special_work_type_id || undefined,
+            missionDestination: r.mission_destination || undefined,
+            notes: r.notes || undefined,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at_iso || undefined
+          }));
 
         let settings = undefined;
         if (settingsRes.rows && settingsRes.rows[0]) {
@@ -146,18 +174,17 @@ app.get('/api/sync', async (req, res) => {
           };
         }
 
-        let existingFile: any = {};
-        if (fs.existsSync(dbFile)) {
-          try { existingFile = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch { existingFile = {}; }
-        }
-
         const pgPayload = {
           users,
           groups,
           projects,
           attendance,
+          deletedProjectIds,
+          deletedGroupIds,
+          deletedAttendanceIds,
           settings,
           activeTimers: existingFile.activeTimers || {},
+          stoppedTimers: existingFile.stoppedTimers || {},
           sessions: existingFile.sessions || [],
           updatedAt: new Date().toISOString()
         };
@@ -184,6 +211,39 @@ app.get('/api/sync', async (req, res) => {
   }
 });
 
+// Helper to merge arrays by ID and updatedAt timestamp while respecting deleted IDs
+function mergeEntitiesByTimestamp(existingList: any[], incomingList: any[], deletedIds: string[]): any[] {
+  const deletedSet = new Set(deletedIds || []);
+  const map = new Map<string, any>();
+
+  if (Array.isArray(existingList)) {
+    for (const item of existingList) {
+      if (item && item.id && !deletedSet.has(item.id)) {
+        map.set(item.id, item);
+      }
+    }
+  }
+
+  if (Array.isArray(incomingList)) {
+    for (const inc of incomingList) {
+      if (!inc || !inc.id || deletedSet.has(inc.id)) continue;
+      const cur = map.get(inc.id);
+      if (!cur) {
+        // If existingList already was populated on server, only accept brand-new item if it has updatedAt or didn't exist before
+        map.set(inc.id, inc);
+      } else {
+        const curTime = cur.updatedAt ? Date.parse(cur.updatedAt) : 0;
+        const incTime = inc.updatedAt ? Date.parse(inc.updatedAt) : 0;
+        if (!curTime || (incTime && incTime >= curTime)) {
+          map.set(inc.id, { ...cur, ...inc });
+        }
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 // Post changes to shared server storage (persisted to file & PostgreSQL)
 app.post('/api/sync', async (req, res) => {
   try {
@@ -201,6 +261,20 @@ app.post('/api/sync', async (req, res) => {
       }
     }
 
+    // Merge deleted ID sets permanently so no client can resurrect deleted items
+    const mergedDeletedProjectIds = Array.from(new Set([
+      ...(Array.isArray(existing.deletedProjectIds) ? existing.deletedProjectIds : []),
+      ...(Array.isArray(payload.deletedProjectIds) ? payload.deletedProjectIds : [])
+    ]));
+    const mergedDeletedGroupIds = Array.from(new Set([
+      ...(Array.isArray(existing.deletedGroupIds) ? existing.deletedGroupIds : []),
+      ...(Array.isArray(payload.deletedGroupIds) ? payload.deletedGroupIds : [])
+    ]));
+    const mergedDeletedAttendanceIds = Array.from(new Set([
+      ...(Array.isArray(existing.deletedAttendanceIds) ? existing.deletedAttendanceIds : []),
+      ...(Array.isArray(payload.deletedAttendanceIds) ? payload.deletedAttendanceIds : [])
+    ]));
+
     // Merge sessions carefully so sessions from different devices don't overwrite each other
     let mergedSessions: any[] = Array.isArray(existing.sessions) ? [...existing.sessions] : [];
     if (Array.isArray(payload.sessions)) {
@@ -214,10 +288,51 @@ app.post('/api/sync', async (req, res) => {
       }
     }
 
+    // Merge activeTimers and stoppedTimers safely so stopping a live tracker is never overwritten by a concurrent sync
+    const mergedActiveTimers: Record<string, any> = { ...(existing.activeTimers || {}) };
+    const mergedStoppedTimers: Record<string, number> = { ...(existing.stoppedTimers || {}) };
+    if (payload.stoppedTimers && typeof payload.stoppedTimers === 'object') {
+      for (const [uid, stoppedAt] of Object.entries(payload.stoppedTimers)) {
+        const ts = Number(stoppedAt) || Date.now();
+        if (!mergedStoppedTimers[uid] || ts > mergedStoppedTimers[uid]) {
+          mergedStoppedTimers[uid] = ts;
+        }
+        const active = mergedActiveTimers[uid];
+        if (active && (!active.startTimestamp || active.startTimestamp <= ts)) {
+          delete mergedActiveTimers[uid];
+        }
+      }
+    }
+    if (payload.activeTimers && typeof payload.activeTimers === 'object') {
+      for (const [uid, timer] of Object.entries(payload.activeTimers)) {
+        if (timer === null) {
+          delete mergedActiveTimers[uid];
+          mergedStoppedTimers[uid] = Date.now();
+        } else if (timer && typeof timer === 'object') {
+          const stoppedAt = mergedStoppedTimers[uid] || 0;
+          const startTs = (timer as any).startTimestamp || 0;
+          if (startTs > stoppedAt) {
+            mergedActiveTimers[uid] = timer;
+          }
+        }
+      }
+    }
+
+    const mergedGroups = mergeEntitiesByTimestamp(existing.groups, payload.groups, mergedDeletedGroupIds);
+    const mergedProjects = mergeEntitiesByTimestamp(existing.projects, payload.projects, mergedDeletedProjectIds);
+    const mergedAttendance = mergeEntitiesByTimestamp(existing.attendance, payload.attendance, mergedDeletedAttendanceIds);
+
     const merged = {
       ...existing,
       ...payload,
-      activeTimers: payload.activeTimers ? { ...existing.activeTimers, ...payload.activeTimers } : existing.activeTimers,
+      groups: mergedGroups,
+      projects: mergedProjects,
+      attendance: mergedAttendance,
+      deletedProjectIds: mergedDeletedProjectIds,
+      deletedGroupIds: mergedDeletedGroupIds,
+      deletedAttendanceIds: mergedDeletedAttendanceIds,
+      activeTimers: mergedActiveTimers,
+      stoppedTimers: mergedStoppedTimers,
       sessions: mergedSessions,
       updatedAt: new Date().toISOString()
     };
@@ -261,7 +376,6 @@ app.post('/api/sync', async (req, res) => {
               ]);
             } catch (uErr: any) {
               if (uErr.code === '23505') {
-                // If unique conflict on username with different ID, update by username
                 try {
                   await pgPool.query(`
                     UPDATE users SET
@@ -285,87 +399,93 @@ app.post('/api/sync', async (req, res) => {
           }
         }
 
-        if (Array.isArray(payload.groups)) {
-          for (const g of payload.groups) {
-            try {
-              await pgPool.query(`
-                INSERT INTO groups (id, name, description, member_user_ids, created_at)
-                VALUES ($1, $2, $3, $4::jsonb, $5)
-                ON CONFLICT (id) DO UPDATE SET
-                  name = EXCLUDED.name,
-                  description = EXCLUDED.description,
-                  member_user_ids = EXCLUDED.member_user_ids;
-              `, [g.id, g.name, g.description || null, JSON.stringify(g.memberUserIds || []), g.createdAt || '1405/07/16']);
-            } catch {}
-          }
-        }
-
-        if (Array.isArray(payload.deletedGroupIds) && payload.deletedGroupIds.length > 0) {
+        if (mergedDeletedGroupIds.length > 0) {
           try {
-            await pgPool.query('DELETE FROM groups WHERE id = ANY($1)', [payload.deletedGroupIds]);
+            await pgPool.query('DELETE FROM groups WHERE id = ANY($1)', [mergedDeletedGroupIds]);
           } catch {}
         }
 
-        if (Array.isArray(payload.deletedProjectIds) && payload.deletedProjectIds.length > 0) {
+        for (const g of mergedGroups) {
           try {
-            await pgPool.query('DELETE FROM projects WHERE id = ANY($1)', [payload.deletedProjectIds]);
+            await pgPool.query(`
+              INSERT INTO groups (id, name, description, member_user_ids, created_at, updated_at_iso)
+              VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+              ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                member_user_ids = EXCLUDED.member_user_ids,
+                updated_at_iso = COALESCE(EXCLUDED.updated_at_iso, groups.updated_at_iso);
+            `, [g.id, g.name, g.description || null, JSON.stringify(g.memberUserIds || []), g.createdAt || '1405/07/16', g.updatedAt || null]);
           } catch {}
         }
 
-        if (Array.isArray(payload.projects)) {
-          for (const p of payload.projects) {
-            try {
-              await pgPool.query(`
-                INSERT INTO projects (id, title, description, group_ids, is_active, created_at)
-                VALUES ($1, $2, $3, $4::jsonb, $5, $6)
-                ON CONFLICT (id) DO UPDATE SET
-                  title = EXCLUDED.title,
-                  description = EXCLUDED.description,
-                  group_ids = EXCLUDED.group_ids,
-                  is_active = EXCLUDED.is_active;
-              `, [p.id, p.title, p.description || null, JSON.stringify(p.groupIds || []), p.isActive !== false, p.createdAt || '1405/07/16']);
-            } catch {}
-          }
-        }
-
-        if (Array.isArray(payload.deletedAttendanceIds) && payload.deletedAttendanceIds.length > 0) {
+        if (mergedDeletedProjectIds.length > 0) {
           try {
-            await pgPool.query('DELETE FROM attendance_records WHERE id = ANY($1)', [payload.deletedAttendanceIds]);
+            await pgPool.query('UPDATE attendance_records SET project_id = NULL WHERE project_id = ANY($1)', [mergedDeletedProjectIds]).catch(() => {});
+            await pgPool.query('DELETE FROM projects WHERE id = ANY($1)', [mergedDeletedProjectIds]);
           } catch {}
         }
 
-        if (Array.isArray(payload.attendance)) {
-          for (const a of payload.attendance) {
-            try {
-              await pgPool.query(`
-                INSERT INTO attendance_records (
-                  id, user_id, type, project_id, date, gregorian_date,
-                  start_time, end_time, duration_minutes, leave_type,
-                  special_work_type, mission_destination, notes, created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                ON CONFLICT (id) DO UPDATE SET
-                  user_id = EXCLUDED.user_id,
-                  type = EXCLUDED.type,
-                  project_id = EXCLUDED.project_id,
-                  date = EXCLUDED.date,
-                  gregorian_date = EXCLUDED.gregorian_date,
-                  start_time = EXCLUDED.start_time,
-                  end_time = EXCLUDED.end_time,
-                  duration_minutes = EXCLUDED.duration_minutes,
-                  leave_type = EXCLUDED.leave_type,
-                  special_work_type = EXCLUDED.special_work_type,
-                  mission_destination = EXCLUDED.mission_destination,
-                  notes = EXCLUDED.notes;
-              `, [
-                a.id, a.userId, a.type, a.projectId || null, a.date,
-                a.gregorianDate || new Date().toISOString().slice(0, 10),
-                a.startTime || '08:00', a.endTime || '17:00',
-                a.durationMinutes || 0, a.leaveType || null,
-                a.specialWorkType || null, a.missionDestination || null,
-                a.notes || null, a.createdAt || '1405/07/16'
-              ]);
-            } catch {}
-          }
+        for (const p of mergedProjects) {
+          try {
+            await pgPool.query(`
+              INSERT INTO projects (id, title, description, group_ids, is_active, created_at, updated_at_iso)
+              VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
+              ON CONFLICT (id) DO UPDATE SET
+                title = EXCLUDED.title,
+                description = EXCLUDED.description,
+                group_ids = EXCLUDED.group_ids,
+                is_active = EXCLUDED.is_active,
+                updated_at_iso = COALESCE(EXCLUDED.updated_at_iso, projects.updated_at_iso);
+            `, [p.id, p.title, p.description || null, JSON.stringify(p.groupIds || []), p.isActive !== false, p.createdAt || '1405/07/16', p.updatedAt || null]);
+          } catch {}
+        }
+
+        if (mergedDeletedAttendanceIds.length > 0) {
+          try {
+            await pgPool.query('DELETE FROM attendance_records WHERE id = ANY($1)', [mergedDeletedAttendanceIds]);
+          } catch {}
+        }
+
+        const validProjectIdSet = new Set(mergedProjects.map((p: any) => p.id));
+
+        for (const a of mergedAttendance) {
+          try {
+            const safeProjectId = a.projectId && validProjectIdSet.has(a.projectId) ? a.projectId : null;
+            await pgPool.query(`
+              INSERT INTO attendance_records (
+                id, user_id, type, project_id, date, start_date, end_date, gregorian_date,
+                start_time, end_time, duration_minutes, leave_type, leave_type_id,
+                special_work_type, special_work_type_id, mission_destination, notes, created_at, updated_at_iso
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+              ON CONFLICT (id) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                type = EXCLUDED.type,
+                project_id = EXCLUDED.project_id,
+                date = EXCLUDED.date,
+                start_date = EXCLUDED.start_date,
+                end_date = EXCLUDED.end_date,
+                gregorian_date = EXCLUDED.gregorian_date,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                duration_minutes = EXCLUDED.duration_minutes,
+                leave_type = EXCLUDED.leave_type,
+                leave_type_id = EXCLUDED.leave_type_id,
+                special_work_type = EXCLUDED.special_work_type,
+                special_work_type_id = EXCLUDED.special_work_type_id,
+                mission_destination = EXCLUDED.mission_destination,
+                notes = EXCLUDED.notes,
+                updated_at_iso = COALESCE(EXCLUDED.updated_at_iso, attendance_records.updated_at_iso);
+            `, [
+              a.id, a.userId, a.type, safeProjectId, a.startDate || a.date,
+              a.startDate || a.date, a.endDate || a.startDate || a.date,
+              a.gregorianDate || new Date().toISOString().slice(0, 10),
+              a.startTime || '08:00', a.endTime || '17:00',
+              a.durationMinutes || 0, a.leaveType || null, a.leaveTypeId || null,
+              a.specialWorkType || null, a.specialWorkTypeId || null, a.missionDestination || null,
+              a.notes || null, a.createdAt || '1405/07/16', a.updatedAt || null
+            ]);
+          } catch {}
         }
 
         if (payload.settings && typeof payload.settings === 'object') {
@@ -423,10 +543,12 @@ app.post('/api/active-timer', (req, res) => {
     }
 
     if (!existing.activeTimers) existing.activeTimers = {};
+    if (!existing.stoppedTimers) existing.stoppedTimers = {};
     if (activeTimer) {
       existing.activeTimers[userId] = activeTimer;
     } else {
       delete existing.activeTimers[userId];
+      existing.stoppedTimers[userId] = Date.now();
     }
 
     fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
@@ -943,10 +1065,13 @@ app.delete('/api/attendance/:id', async (req, res) => {
     if (fs.existsSync(dbFile)) {
       try { existing = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch { existing = {}; }
     }
+    const delSet = new Set<string>(Array.isArray(existing.deletedAttendanceIds) ? existing.deletedAttendanceIds : []);
+    delSet.add(id);
+    existing.deletedAttendanceIds = Array.from(delSet);
     if (Array.isArray(existing.attendance)) {
       existing.attendance = existing.attendance.filter((a: any) => a.id !== id);
-      fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
     }
+    fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
     if (pgPool) {
       await pgPool.query('DELETE FROM attendance_records WHERE id = $1', [id]).catch(() => {});
     }
@@ -964,11 +1089,15 @@ app.delete('/api/projects/:id', async (req, res) => {
     if (fs.existsSync(dbFile)) {
       try { existing = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch { existing = {}; }
     }
+    const delSet = new Set<string>(Array.isArray(existing.deletedProjectIds) ? existing.deletedProjectIds : []);
+    delSet.add(id);
+    existing.deletedProjectIds = Array.from(delSet);
     if (Array.isArray(existing.projects)) {
       existing.projects = existing.projects.filter((p: any) => p.id !== id);
-      fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
     }
+    fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
     if (pgPool) {
+      await pgPool.query('UPDATE attendance_records SET project_id = NULL WHERE project_id = $1', [id]).catch(() => {});
       await pgPool.query('DELETE FROM projects WHERE id = $1', [id]).catch(() => {});
     }
     return res.json({ success: true, deletedId: id });
@@ -985,10 +1114,13 @@ app.delete('/api/groups/:id', async (req, res) => {
     if (fs.existsSync(dbFile)) {
       try { existing = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch { existing = {}; }
     }
+    const delSet = new Set<string>(Array.isArray(existing.deletedGroupIds) ? existing.deletedGroupIds : []);
+    delSet.add(id);
+    existing.deletedGroupIds = Array.from(delSet);
     if (Array.isArray(existing.groups)) {
       existing.groups = existing.groups.filter((g: any) => g.id !== id);
-      fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
     }
+    fs.writeFileSync(dbFile, JSON.stringify(existing, null, 2), 'utf-8');
     if (pgPool) {
       await pgPool.query('DELETE FROM groups WHERE id = $1', [id]).catch(() => {});
     }
@@ -999,7 +1131,7 @@ app.delete('/api/groups/:id', async (req, res) => {
 });
 
 // Application Version Endpoint
-const SERVER_APP_VERSION = 'v2.0.12';
+const SERVER_APP_VERSION = 'v2.0.13';
 app.get('/api/version', (req, res) => {
   res.json({
     version: SERVER_APP_VERSION,

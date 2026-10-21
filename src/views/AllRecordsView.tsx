@@ -74,13 +74,17 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Expanded days (date strings). By default, all days are expanded!
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  // Collapsed days (date strings). By default, all days are expanded!
+  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(new Set());
 
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isEndDateManuallySet, setIsEndDateManuallySet] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const settings = StorageService.getSettings();
 
   // Form States for Add / Edit
   const [formData, setFormData] = useState({
@@ -98,6 +102,22 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
     notes: '',
     targetUserId: user.id
   });
+
+  const leaveTypeOptions = useMemo(() => {
+    const base = (settings.leaveTypes || []).map(lt => getCustomTypeTitle(lt, lang)).filter(Boolean);
+    const defaults = isPersian
+      ? ['مرخصی عادی', 'مرخصی استعلاجی', 'مرخصی مناسبتی', 'مرخصی تولد', 'مرخصی بدون حقوق', 'مرخصی ساعتی']
+      : ['Regular / Annual Leave', 'Sick Leave', 'Casual / Occasion Leave', 'Birthday Leave', 'Unpaid Leave', 'Hourly Leave'];
+    return Array.from(new Set([...base, ...defaults, ...(formData.leaveType ? [formData.leaveType] : [])]));
+  }, [settings.leaveTypes, lang, isPersian, formData.leaveType]);
+
+  const specialTypeOptions = useMemo(() => {
+    const base = (settings.specialWorkTypes || []).map(st => getCustomTypeTitle(st, lang)).filter(Boolean);
+    const defaults = isPersian
+      ? ['قطعی برق', 'اختلال شبکه و ارتباطات', 'تعطیلی اضطراری / شرایط جوی', 'سایر']
+      : ['Power Outage', 'Network & System Disruption', 'Emergency / Weather Closure', 'Other'];
+    return Array.from(new Set([...base, ...defaults, ...(formData.specialWorkType ? [formData.specialWorkType] : [])]));
+  }, [settings.specialWorkTypes, lang, isPersian, formData.specialWorkType]);
 
   const modalRef = useModalFocusTrap<HTMLDivElement>({
     isOpen: isModalOpen,
@@ -207,15 +227,8 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
     });
   }, [filteredRecords]);
 
-  // Expand all by default on first load or when dates change
-  useEffect(() => {
-    if (dayGroups.length > 0 && expandedDates.size === 0) {
-      setExpandedDates(new Set(dayGroups.map(g => g.date)));
-    }
-  }, [dayGroups]);
-
   const toggleDayExpanded = (date: string) => {
-    setExpandedDates(prev => {
+    setCollapsedDates(prev => {
       const next = new Set(prev);
       if (next.has(date)) next.delete(date);
       else next.add(date);
@@ -224,11 +237,11 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
   };
 
   const handleExpandAll = () => {
-    setExpandedDates(new Set(dayGroups.map(g => g.date)));
+    setCollapsedDates(new Set());
   };
 
   const handleCollapseAll = () => {
-    setExpandedDates(new Set());
+    setCollapsedDates(new Set(dayGroups.map(g => g.date)));
   };
 
   // Grand totals across all days
@@ -254,6 +267,8 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
   const handleOpenCreateModal = (specificDate?: string) => {
     const targetDate = specificDate || getTodayJalali();
     setEditingRecord(null);
+    setIsEndDateManuallySet(false);
+    setFormError(null);
     setFormData({
       type: 'regular',
       projectId: availableProjects[0]?.id || '',
@@ -261,10 +276,10 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
       startTime: '08:00',
       endDate: targetDate,
       endTime: '17:00',
-      leaveType: 'مرخصی عادی',
+      leaveType: leaveTypeOptions[0] || 'مرخصی عادی',
       leaveTypeId: '',
       missionDestination: '',
-      specialWorkType: 'قطعی برق',
+      specialWorkType: specialTypeOptions[0] || 'قطعی برق',
       specialWorkTypeId: '',
       notes: '',
       targetUserId: isAdmin && selectedUserId !== 'all' ? selectedUserId : user.id
@@ -274,18 +289,22 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
 
   // Open Edit Modal
   const handleOpenEditModal = (rec: AttendanceRecord) => {
+    const sDate = rec.startDate || rec.date || getTodayJalali();
+    const eDate = rec.endDate || sDate;
     setEditingRecord(rec);
+    setIsEndDateManuallySet(eDate !== sDate);
+    setFormError(null);
     setFormData({
       type: rec.type,
       projectId: rec.projectId || '',
-      startDate: rec.startDate || rec.date || getTodayJalali(),
+      startDate: sDate,
       startTime: rec.startTime || '08:00',
-      endDate: rec.endDate || rec.startDate || rec.date || getTodayJalali(),
+      endDate: eDate,
       endTime: rec.endTime || '17:00',
-      leaveType: rec.leaveType || 'مرخصی عادی',
+      leaveType: rec.leaveType || leaveTypeOptions[0] || 'مرخصی عادی',
       leaveTypeId: rec.leaveTypeId || '',
       missionDestination: rec.missionDestination || '',
-      specialWorkType: rec.specialWorkType || 'قطعی برق',
+      specialWorkType: rec.specialWorkType || specialTypeOptions[0] || 'قطعی برق',
       specialWorkTypeId: rec.specialWorkTypeId || '',
       notes: rec.notes || '',
       targetUserId: rec.userId
@@ -296,6 +315,7 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
   // Save Record
   const handleSaveRecord = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
 
     const duration = calculateFullDurationMinutes(
       formData.startDate,
@@ -305,15 +325,24 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
     );
 
     if (duration <= 0) {
-      alert(isPersian ? 'زمان پایان باید بعد از زمان شروع باشد.' : 'End time must be after start time.');
+      setFormError(isPersian ? 'تاریخ و ساعت پایان باید بعد از تاریخ و ساعت شروع باشد.' : 'End date & time must be after start date & time.');
       return;
     }
+
+    const selectedLeave = settings.leaveTypes.find(
+      lt => getCustomTypeTitle(lt, lang) === formData.leaveType ||
+            (typeof lt === 'object' && (lt.titleFa === formData.leaveType || lt.titleEn === formData.leaveType))
+    );
+    const selectedSpecial = settings.specialWorkTypes.find(
+      st => getCustomTypeTitle(st, lang) === formData.specialWorkType ||
+            (typeof st === 'object' && (st.titleFa === formData.specialWorkType || st.titleEn === formData.specialWorkType))
+    );
 
     const rec: AttendanceRecord = {
       id: editingRecord ? editingRecord.id : `rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       userId: formData.targetUserId,
       type: formData.type,
-      projectId: formData.type === 'regular' ? formData.projectId : undefined,
+      projectId: (formData.type === 'regular' || formData.type === 'mission') ? (formData.projectId || undefined) : undefined,
       startDate: formData.startDate,
       startTime: formData.startTime,
       endDate: formData.endDate,
@@ -321,13 +350,13 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
       date: formData.startDate,
       durationMinutes: duration,
       leaveType: formData.type === 'leave' ? formData.leaveType : undefined,
-      leaveTypeId: formData.type === 'leave' ? formData.leaveTypeId : undefined,
+      leaveTypeId: formData.type === 'leave' && selectedLeave && typeof selectedLeave === 'object' ? selectedLeave.id : undefined,
       missionDestination: formData.type === 'mission' ? formData.missionDestination : undefined,
       specialWorkType: formData.type === 'special' ? formData.specialWorkType : undefined,
-      specialWorkTypeId: formData.type === 'special' ? formData.specialWorkTypeId : undefined,
+      specialWorkTypeId: formData.type === 'special' && selectedSpecial && typeof selectedSpecial === 'object' ? selectedSpecial.id : undefined,
       notes: formData.notes.trim() || undefined,
       createdAt: editingRecord ? editingRecord.createdAt : getTodayJalali(),
-      updatedAt: getTodayJalali()
+      updatedAt: new Date().toISOString()
     };
 
     StorageService.saveAttendanceRecord(rec);
@@ -705,7 +734,7 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
           </div>
         ) : (
           dayGroups.map(group => {
-            const isExpanded = expandedDates.has(group.date);
+            const isExpanded = !collapsedDates.has(group.date);
 
             return (
               <div
@@ -995,6 +1024,12 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
                 </div>
               </div>
 
+              {formError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs rounded-xl font-bold">
+                  {formError}
+                </div>
+              )}
+
               {/* Type-specific inputs */}
               {formData.type === 'regular' && (
                 <div>
@@ -1027,10 +1062,9 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
                     onChange={e => setFormData(p => ({ ...p, leaveType: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="مرخصی عادی">مرخصی عادی</option>
-                    <option value="مرخصی استعلاجی">مرخصی استعلاجی</option>
-                    <option value="مرخصی تولد">مرخصی تولد</option>
-                    <option value="مرخصی بدون حقوق">مرخصی بدون حقوق</option>
+                    {leaveTypeOptions.map(title => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -1061,33 +1095,30 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
                     onChange={e => setFormData(p => ({ ...p, specialWorkType: e.target.value }))}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="قطعی برق">قطعی برق</option>
-                    <option value="شرایط اضطراری">شرایط اضطراری</option>
-                    <option value="تعطیلی ناخواسته">تعطیلی ناخواسته</option>
-                    <option value="سایر">سایر</option>
+                    {specialTypeOptions.map(title => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
                   </select>
                 </div>
               )}
 
-              {/* Date & Time Row */}
+              {/* Start Date & Start Time Row */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    {isPersian ? 'تاریخ' : 'Date'}
+                    {isPersian ? 'تاریخ شروع' : 'Start Date'}
                   </label>
                   <PersianDatePicker
                     value={formData.startDate}
-                    onChange={v => setFormData(p => ({ ...p, startDate: v, endDate: v }))}
+                    onChange={v => {
+                      setFormData(p => ({
+                        ...p,
+                        startDate: v,
+                        endDate: isEndDateManuallySet ? p.endDate : v
+                      }));
+                    }}
                   />
                 </div>
-                <div className="flex items-end">
-                  <div className="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 font-bold text-xs font-b-mitra w-full text-center">
-                    {getJalaliWeekday(formData.startDate) || 'روز هفته'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                     {isPersian ? 'ساعت شروع' : 'Start Time'}
@@ -1095,6 +1126,22 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
                   <TimePicker
                     value={formData.startTime}
                     onChange={v => setFormData(p => ({ ...p, startTime: v }))}
+                  />
+                </div>
+              </div>
+
+              {/* End Date & End Time Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    {isPersian ? 'تاریخ پایان' : 'End Date'}
+                  </label>
+                  <PersianDatePicker
+                    value={formData.endDate}
+                    onChange={v => {
+                      setIsEndDateManuallySet(true);
+                      setFormData(p => ({ ...p, endDate: v }));
+                    }}
                   />
                 </div>
                 <div>
@@ -1106,6 +1153,14 @@ export const AllRecordsView: React.FC<AllRecordsViewProps> = ({
                     onChange={v => setFormData(p => ({ ...p, endTime: v }))}
                   />
                 </div>
+              </div>
+
+              {/* Live Duration Summary */}
+              <div className="p-2.5 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800/60 rounded-xl text-xs flex justify-between items-center font-b-nazanin">
+                <span className="text-blue-700 dark:text-blue-300 font-semibold">{t.durationCol}:</span>
+                <span className="font-bold text-blue-900 dark:text-blue-200 text-sm font-b-mitra">
+                  {formatMinutes(calculateFullDurationMinutes(formData.startDate, formData.startTime, formData.endDate, formData.endTime), isPersian)}
+                </span>
               </div>
 
               {/* Notes */}

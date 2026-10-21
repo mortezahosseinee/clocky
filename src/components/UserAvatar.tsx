@@ -1,6 +1,5 @@
 import React from 'react';
-import { User as UserIcon } from 'lucide-react';
-import { isColorAvatar, getColorFromAvatar } from '../utils/deviceAndIp';
+import { isColorAvatar, getColorFromAvatar, isEmojiAvatar, parseEmojiAvatar } from '../utils/deviceAndIp';
 
 interface UserAvatarProps {
   avatar?: string;
@@ -20,6 +19,15 @@ const sizeClasses = {
   '2xl': 'w-24 h-24 text-3xl'
 };
 
+const emojiSizeClasses = {
+  xs: 'text-sm',
+  sm: 'text-base',
+  md: 'text-xl',
+  lg: 'text-2xl',
+  xl: 'text-3xl',
+  '2xl': 'text-5xl'
+};
+
 const roundedClasses = {
   full: 'rounded-full',
   '2xl': 'rounded-2xl',
@@ -36,8 +44,23 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   rounded = 'xl'
 }) => {
   const sizeCls = sizeClasses[size];
+  const emojiCls = emojiSizeClasses[size];
   const roundCls = roundedClasses[rounded];
   const initial = (firstName[0] || lastName[0] || 'U').toUpperCase();
+
+  if (avatar && isEmojiAvatar(avatar)) {
+    const { emoji, bgColor } = parseEmojiAvatar(avatar);
+    return (
+      <div
+        className={`${sizeCls} ${roundCls} flex items-center justify-center shadow-xs shrink-0 select-none ${className}`}
+        style={{ backgroundColor: bgColor }}
+      >
+        <span className={`${emojiCls} leading-none`} role="img" aria-label="avatar">
+          {emoji}
+        </span>
+      </div>
+    );
+  }
 
   if (avatar && isColorAvatar(avatar)) {
     const bgColor = getColorFromAvatar(avatar);
@@ -70,3 +93,4 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
     </div>
   );
 };
+

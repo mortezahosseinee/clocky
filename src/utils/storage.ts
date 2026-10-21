@@ -312,14 +312,43 @@ export const StorageService = {
         hasUpdated = true;
       }
 
+      // Sync server-side deleted IDs to local storage first so no client resurrects deleted items
+      if (Array.isArray(data.deletedGroupIds)) {
+        for (const id of data.deletedGroupIds) this.markGroupAsDeleted(id);
+      }
+      if (Array.isArray(data.deletedProjectIds)) {
+        for (const id of data.deletedProjectIds) this.markProjectAsDeleted(id);
+      }
+      if (Array.isArray(data.deletedAttendanceIds)) {
+        for (const id of data.deletedAttendanceIds) this.markAttendanceAsDeleted(id);
+      }
+
+      const nowMs = Date.now();
+      const isRecentLocalChange = (item: any) => {
+        if (!item || !item.updatedAt) return false;
+        const t = Date.parse(item.updatedAt);
+        return !isNaN(t) && (nowMs - t) < 120000;
+      };
+
       if (Array.isArray(data.groups)) {
         const deletedGroupIds = this.getDeletedGroupIds();
         const localGroups = this.getGroups().filter(g => !deletedGroupIds.includes(g.id));
-        const mergedGroups = data.groups.filter((sg: any) => !deletedGroupIds.includes(sg.id));
+        const mergedGroups = data.groups
+          .filter((sg: any) => sg && sg.id && !deletedGroupIds.includes(sg.id))
+          .map((sg: any) => {
+            const lg = localGroups.find(g => g.id === sg.id);
+            if (lg && lg.updatedAt && (!sg.updatedAt || Date.parse(lg.updatedAt) > Date.parse(sg.updatedAt))) {
+              shouldPushBack = true;
+              return lg;
+            }
+            return sg;
+          });
         for (const lg of localGroups) {
           if (!mergedGroups.some((sg: any) => sg.id === lg.id)) {
-            mergedGroups.push(lg);
-            shouldPushBack = true;
+            if (data.groups.length === 0 || isRecentLocalChange(lg)) {
+              mergedGroups.push(lg);
+              shouldPushBack = true;
+            }
           }
         }
         localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(mergedGroups));
@@ -329,13 +358,22 @@ export const StorageService = {
       if (Array.isArray(data.projects)) {
         const deletedProjectIds = this.getDeletedProjectIds();
         const localProjects = this.getProjects().filter(p => !deletedProjectIds.includes(p.id));
-        const mergedProjects = data.projects.filter(
-          (sp: any) => sp && sp.id && !['prj-1', 'prj-2', 'prj-3'].includes(sp.id) && !deletedProjectIds.includes(sp.id)
-        );
+        const mergedProjects = data.projects
+          .filter((sp: any) => sp && sp.id && !['prj-1', 'prj-2', 'prj-3'].includes(sp.id) && !deletedProjectIds.includes(sp.id))
+          .map((sp: any) => {
+            const lp = localProjects.find(p => p.id === sp.id);
+            if (lp && lp.updatedAt && (!sp.updatedAt || Date.parse(lp.updatedAt) > Date.parse(sp.updatedAt))) {
+              shouldPushBack = true;
+              return lp;
+            }
+            return sp;
+          });
         for (const lp of localProjects) {
           if (!mergedProjects.some((sp: any) => sp.id === lp.id)) {
-            mergedProjects.push(lp);
-            shouldPushBack = true;
+            if (data.projects.length === 0 || isRecentLocalChange(lp)) {
+              mergedProjects.push(lp);
+              shouldPushBack = true;
+            }
           }
         }
         localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(mergedProjects));
@@ -345,11 +383,28 @@ export const StorageService = {
       if (Array.isArray(data.attendance)) {
         const deletedIds = this.getDeletedAttendanceIds();
         const localAtt = this.getAttendanceRecords().filter(r => !deletedIds.includes(r.id));
-        const mergedAtt = data.attendance.filter((sa: any) => !deletedIds.includes(sa.id));
+        const mergedAtt = data.attendance
+          .filter((sa: any) => sa && sa.id && !deletedIds.includes(sa.id))
+          .map((sa: any) => {
+            const la = localAtt.find(r => r.id === sa.id);
+            if (la && la.updatedAt && (!sa.updatedAt || Date.parse(la.updatedAt) > Date.parse(sa.updatedAt))) {
+              shouldPushBack = true;
+              return la;
+            }
+            return {
+              ...sa,
+              startDate: sa.startDate || la?.startDate || sa.date,
+              endDate: sa.endDate || la?.endDate || sa.startDate || sa.date,
+              leaveTypeId: sa.leaveTypeId || la?.leaveTypeId,
+              specialWorkTypeId: sa.specialWorkTypeId || la?.specialWorkTypeId
+            };
+          });
         for (const la of localAtt) {
           if (!mergedAtt.some((sa: any) => sa.id === la.id)) {
-            mergedAtt.push(la);
-            shouldPushBack = true;
+            if (data.attendance.length === 0 || isRecentLocalChange(la)) {
+              mergedAtt.unshift(la);
+              shouldPushBack = true;
+            }
           }
         }
         localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(mergedAtt));
@@ -369,12 +424,36 @@ export const StorageService = {
         localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(mergedSessions));
       }
 
-      // Sync active timers across devices
-      if (data.activeTimers && typeof data.activeTimers === 'object') {
-        const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-        if (currentUserId && data.activeTimers[currentUserId]) {
-          localStorage.setItem(`attendance_live_timer_${currentUserId}`, JSON.stringify(data.activeTimers[currentUserId]));
-          hasUpdated = true;
+      // Sync active timers across devices while respecting stopped timers
+      const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+      if (currentUserId) {
+        const localStoppedAt = Number(localStorage.getItem(`attendance_live_timer_stopped_${currentUserId}`) || '0');
+        const serverStoppedAt = Number(data.stoppedTimers?.[currentUserId] || '0');
+        const effectiveStoppedAt = Math.max(localStoppedAt, serverStoppedAt);
+        if (effectiveStoppedAt > localStoppedAt) {
+          localStorage.setItem(`attendance_live_timer_stopped_${currentUserId}`, String(effectiveStoppedAt));
+        }
+
+        const serverActive = data.activeTimers?.[currentUserId];
+        if (serverActive && typeof serverActive === 'object') {
+          const startTs = Number(serverActive.startTimestamp || 0);
+          if (startTs > effectiveStoppedAt) {
+            localStorage.setItem(`attendance_live_timer_${currentUserId}`, JSON.stringify(serverActive));
+            hasUpdated = true;
+          } else {
+            localStorage.removeItem(`attendance_live_timer_${currentUserId}`);
+          }
+        } else if (serverStoppedAt > 0) {
+          const localActiveRaw = localStorage.getItem(`attendance_live_timer_${currentUserId}`);
+          if (localActiveRaw) {
+            try {
+              const parsed = JSON.parse(localActiveRaw);
+              if (!parsed.startTimestamp || parsed.startTimestamp <= effectiveStoppedAt) {
+                localStorage.removeItem(`attendance_live_timer_${currentUserId}`);
+                hasUpdated = true;
+              }
+            } catch {}
+          }
         }
       }
 
@@ -403,9 +482,16 @@ export const StorageService = {
     try {
       const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
       const activeTimerRaw = currentUserId ? localStorage.getItem(`attendance_live_timer_${currentUserId}`) : null;
+      const stoppedAtRaw = currentUserId ? localStorage.getItem(`attendance_live_timer_stopped_${currentUserId}`) : null;
       let activeTimers: any = undefined;
-      if (currentUserId && activeTimerRaw) {
-        try { activeTimers = { [currentUserId]: JSON.parse(activeTimerRaw) }; } catch {}
+      let stoppedTimers: any = undefined;
+      if (currentUserId) {
+        if (activeTimerRaw) {
+          try { activeTimers = { [currentUserId]: JSON.parse(activeTimerRaw) }; } catch {}
+        } else if (stoppedAtRaw) {
+          activeTimers = { [currentUserId]: null };
+          stoppedTimers = { [currentUserId]: Number(stoppedAtRaw) };
+        }
       }
 
       const payload = {
@@ -418,7 +504,8 @@ export const StorageService = {
         deletedProjectIds: this.getDeletedProjectIds(),
         settings: this.getSettings(),
         sessions: this.getSessions(),
-        activeTimers
+        activeTimers,
+        stoppedTimers
       };
       fetch('/api/sync', {
         method: 'POST',
@@ -641,11 +728,12 @@ export const StorageService = {
 
   saveGroup(group: Group) {
     const groups = this.getGroups();
+    const stampedGroup: Group = { ...group, updatedAt: new Date().toISOString() };
     const idx = groups.findIndex(g => g.id === group.id);
     if (idx >= 0) {
-      groups[idx] = group;
+      groups[idx] = stampedGroup;
     } else {
-      groups.push(group);
+      groups.push(stampedGroup);
     }
     localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
     this.pushToServer();
@@ -705,11 +793,12 @@ export const StorageService = {
 
   saveProject(project: Project) {
     const projects = this.getProjects();
+    const stampedProject: Project = { ...project, updatedAt: new Date().toISOString() };
     const idx = projects.findIndex(p => p.id === project.id);
     if (idx >= 0) {
-      projects[idx] = project;
+      projects[idx] = stampedProject;
     } else {
-      projects.push(project);
+      projects.push(stampedProject);
     }
     localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
     this.pushToServer();
@@ -756,13 +845,40 @@ export const StorageService = {
     if (!raw) return [];
     try {
       const records: AttendanceRecord[] = JSON.parse(raw);
-      return records.map(r => ({
-        ...r,
-        startDate: r.startDate || r.date || getTodayJalali(),
-        endDate: r.endDate || r.date || getTodayJalali(),
-        startTime: r.startTime || '08:00',
-        endTime: r.endTime || '16:00'
-      }));
+      const deletedIds = this.getDeletedAttendanceIds();
+      const isTimePattern = (v?: string) => Boolean(v && /^\d{1,2}:\d{2}$/.test(v.trim()));
+      const isDatePattern = (v?: string) => Boolean(v && /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(v.trim()));
+
+      return records
+        .filter(r => r && r.id && !deletedIds.includes(r.id))
+        .map(r => {
+          let sDate = r.startDate || r.date || getTodayJalali();
+          let sTime = r.startTime || '08:00';
+          let eDate = r.endDate || r.startDate || r.date || getTodayJalali();
+          let eTime = r.endTime || '16:00';
+
+          // Auto-heal if startDate and startTime were accidentally swapped
+          if (isTimePattern(sDate) && isDatePattern(sTime)) {
+            const tmp = sDate;
+            sDate = sTime;
+            sTime = tmp;
+          }
+          // Auto-heal if endDate and endTime were accidentally swapped
+          if (isTimePattern(eDate) && isDatePattern(eTime)) {
+            const tmp = eDate;
+            eDate = eTime;
+            eTime = tmp;
+          }
+
+          return {
+            ...r,
+            date: sDate,
+            startDate: sDate,
+            endDate: eDate,
+            startTime: sTime,
+            endTime: eTime
+          };
+        });
     } catch {
       return [];
     }
@@ -770,11 +886,18 @@ export const StorageService = {
 
   saveAttendanceRecord(record: AttendanceRecord) {
     const records = this.getAttendanceRecords();
+    const stampedRecord: AttendanceRecord = {
+      ...record,
+      date: record.startDate || record.date || getTodayJalali(),
+      startDate: record.startDate || record.date || getTodayJalali(),
+      endDate: record.endDate || record.startDate || record.date || getTodayJalali(),
+      updatedAt: new Date().toISOString()
+    };
     const idx = records.findIndex(r => r.id === record.id);
     if (idx >= 0) {
-      records[idx] = { ...record, updatedAt: new Date().toISOString() };
+      records[idx] = stampedRecord;
     } else {
-      records.unshift(record);
+      records.unshift(stampedRecord);
     }
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
     this.pushToServer();

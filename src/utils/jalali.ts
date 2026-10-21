@@ -154,9 +154,9 @@ export function formatMinutes(minutes: number, isPersian = true): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   if (isPersian) {
-    if (h === 0) return `${toPersianDigits(m)} دقیقه`;
-    if (m === 0) return `${toPersianDigits(h)} ساعت`;
-    return `${toPersianDigits(h)} ساعت و ${toPersianDigits(m)} دقیقه`;
+    if (h === 0) return `\u200F${toPersianDigits(m)} دقیقه`;
+    if (m === 0) return `\u200F${toPersianDigits(h)} ساعت`;
+    return `\u200F${toPersianDigits(h)} ساعت و ${toPersianDigits(m)} دقیقه`;
   } else {
     if (h === 0) return `${m}m`;
     if (m === 0) return `${h}h`;

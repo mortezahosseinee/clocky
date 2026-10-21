@@ -99,6 +99,7 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
   const [formStartTime, setFormStartTime] = useState('08:30');
   const [formEndDate, setFormEndDate] = useState(getTodayJalali());
   const [formEndTime, setFormEndTime] = useState('16:30');
+  const [isEndDateManuallySet, setIsEndDateManuallySet] = useState(false);
   const [formProjectId, setFormProjectId] = useState('');
   const [formLeaveType, setFormLeaveType] = useState(() =>
     settings.leaveTypes[0] ? getCustomTypeTitle(settings.leaveTypes[0], lang) : 'مرخصی عادی'
@@ -109,6 +110,24 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
   const [formMissionDestination, setFormMissionDestination] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const leaveTypeOptions = useMemo(() => {
+    const base = (settings.leaveTypes || []).map(lt => getCustomTypeTitle(lt, lang)).filter(Boolean);
+    const defaults = isPersian
+      ? ['مرخصی عادی', 'مرخصی استعلاجی', 'مرخصی مناسبتی', 'مرخصی تولد', 'مرخصی بدون حقوق', 'مرخصی ساعتی']
+      : ['Regular / Annual Leave', 'Sick Leave', 'Casual / Occasion Leave', 'Birthday Leave', 'Unpaid Leave', 'Hourly Leave'];
+    const combined = Array.from(new Set([...base, ...defaults, ...(formLeaveType ? [formLeaveType] : [])]));
+    return combined;
+  }, [settings.leaveTypes, lang, isPersian, formLeaveType]);
+
+  const specialTypeOptions = useMemo(() => {
+    const base = (settings.specialWorkTypes || []).map(st => getCustomTypeTitle(st, lang)).filter(Boolean);
+    const defaults = isPersian
+      ? ['قطعی برق', 'اختلال شبکه و ارتباطات', 'تعطیلی اضطراری / شرایط جوی', 'سایر']
+      : ['Power Outage', 'Network & System Disruption', 'Emergency / Weather Closure', 'Other'];
+    const combined = Array.from(new Set([...base, ...defaults, ...(formSpecialType ? [formSpecialType] : [])]));
+    return combined;
+  }, [settings.specialWorkTypes, lang, isPersian, formSpecialType]);
 
   // Delete Confirm Modal
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -202,23 +221,33 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
   // Helpers for bilingual leave & special work types
   const getDisplayLeaveType = (rec: AttendanceRecord) => {
     if (!rec.leaveType && !rec.leaveTypeId) return '-';
-    const found = settings.leaveTypes.find(
-      lt => (typeof lt === 'object' && lt.id === rec.leaveTypeId) ||
-            (typeof lt === 'object' && (lt.titleFa === rec.leaveType || lt.titleEn === rec.leaveType)) ||
-            lt === rec.leaveType
+    if (rec.leaveType) {
+      const byTitle = settings.leaveTypes.find(
+        lt => (typeof lt === 'object' && (lt.titleFa === rec.leaveType || lt.titleEn === rec.leaveType)) || lt === rec.leaveType
+      );
+      if (byTitle) return getCustomTypeTitle(byTitle, lang);
+      return rec.leaveType;
+    }
+    const byId = settings.leaveTypes.find(
+      lt => typeof lt === 'object' && lt.id === rec.leaveTypeId
     );
-    if (found) return getCustomTypeTitle(found, lang);
+    if (byId) return getCustomTypeTitle(byId, lang);
     return rec.leaveType || '-';
   };
 
   const getDisplaySpecialType = (rec: AttendanceRecord) => {
     if (!rec.specialWorkType && !rec.specialWorkTypeId) return '-';
-    const found = settings.specialWorkTypes.find(
-      st => (typeof st === 'object' && st.id === rec.specialWorkTypeId) ||
-            (typeof st === 'object' && (st.titleFa === rec.specialWorkType || st.titleEn === rec.specialWorkType)) ||
-            st === rec.specialWorkType
+    if (rec.specialWorkType) {
+      const byTitle = settings.specialWorkTypes.find(
+        st => (typeof st === 'object' && (st.titleFa === rec.specialWorkType || st.titleEn === rec.specialWorkType)) || st === rec.specialWorkType
+      );
+      if (byTitle) return getCustomTypeTitle(byTitle, lang);
+      return rec.specialWorkType;
+    }
+    const byId = settings.specialWorkTypes.find(
+      st => typeof st === 'object' && st.id === rec.specialWorkTypeId
     );
-    if (found) return getCustomTypeTitle(found, lang);
+    if (byId) return getCustomTypeTitle(byId, lang);
     return rec.specialWorkType || '-';
   };
 
@@ -229,10 +258,11 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
     setFormStartTime('08:30');
     setFormEndDate(today);
     setFormEndTime('16:30');
+    setIsEndDateManuallySet(false);
     const firstActive = availableProjects.find(p => p.isActive);
     setFormProjectId(firstActive ? firstActive.id : '');
-    setFormLeaveType(settings.leaveTypes[0] ? getCustomTypeTitle(settings.leaveTypes[0], lang) : 'مرخصی عادی');
-    setFormSpecialType(settings.specialWorkTypes[0] ? getCustomTypeTitle(settings.specialWorkTypes[0], lang) : 'قطعی برق');
+    setFormLeaveType(leaveTypeOptions[0] || 'مرخصی عادی');
+    setFormSpecialType(specialTypeOptions[0] || 'قطعی برق');
     setFormMissionDestination('');
     setFormNotes('');
     setFormError(null);
@@ -240,14 +270,19 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
   };
 
   const handleOpenEdit = (rec: AttendanceRecord) => {
+    const sDate = rec.startDate || rec.date || getTodayJalali();
+    const eDate = rec.endDate || sDate;
     setEditingRecord(rec);
-    setFormStartDate(rec.startDate || rec.date || getTodayJalali());
+    setFormStartDate(sDate);
     setFormStartTime(rec.startTime || '08:30');
-    setFormEndDate(rec.endDate || rec.startDate || rec.date || getTodayJalali());
+    setFormEndDate(eDate);
     setFormEndTime(rec.endTime || '16:30');
+    setIsEndDateManuallySet(eDate !== sDate);
     setFormProjectId(rec.projectId || '');
-    setFormLeaveType(rec.leaveType || (settings.leaveTypes[0] ? getCustomTypeTitle(settings.leaveTypes[0], lang) : ''));
-    setFormSpecialType(rec.specialWorkType || (settings.specialWorkTypes[0] ? getCustomTypeTitle(settings.specialWorkTypes[0], lang) : ''));
+    const displayLeave = getDisplayLeaveType(rec);
+    setFormLeaveType(displayLeave !== '-' ? displayLeave : (leaveTypeOptions[0] || 'مرخصی عادی'));
+    const displaySpecial = getDisplaySpecialType(rec);
+    setFormSpecialType(displaySpecial !== '-' ? displaySpecial : (specialTypeOptions[0] || 'قطعی برق'));
     setFormMissionDestination(rec.missionDestination || '');
     setFormNotes(rec.notes || '');
     setFormError(null);
@@ -611,14 +646,18 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
                 return (
                   <tr key={rec.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3 text-center text-slate-400 font-medium">{idx + 1}</td>
-                    <td className="p-3 font-semibold text-slate-800 font-b-mitra text-xs">
+                    <td className="p-3 font-semibold text-slate-800 font-b-mitra text-xs text-right">
                       {isPersian ? formatDateWithWeekday(rec.startDate || rec.date) : (rec.startDate || rec.date)}
                     </td>
-                    <td className="p-3 font-b-mitra font-time text-slate-800 font-bold text-sm" dir="ltr">{toPersianDigits(rec.startTime)}</td>
-                    <td className="p-3 font-semibold text-slate-800 font-b-mitra text-xs">
+                    <td className="p-3 font-b-mitra font-time text-slate-800 font-bold text-sm text-right">
+                      <span dir="ltr" className="inline-block">{toPersianDigits(rec.startTime)}</span>
+                    </td>
+                    <td className="p-3 font-semibold text-slate-800 font-b-mitra text-xs text-right">
                       {isPersian ? formatDateWithWeekday(rec.endDate || rec.startDate || rec.date) : (rec.endDate || rec.startDate || rec.date)}
                     </td>
-                    <td className="p-3 font-b-mitra font-time text-slate-800 font-bold text-sm" dir="ltr">{toPersianDigits(rec.endTime)}</td>
+                    <td className="p-3 font-b-mitra font-time text-slate-800 font-bold text-sm text-right">
+                      <span dir="ltr" className="inline-block">{toPersianDigits(rec.endTime)}</span>
+                    </td>
 
                     {(type === 'regular' || type === 'mission') && (
                       <td className="p-3 font-medium text-slate-800">
@@ -753,7 +792,12 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <PersianDatePicker
                     value={formStartDate}
-                    onChange={setFormStartDate}
+                    onChange={(newDate) => {
+                      setFormStartDate(newDate);
+                      if (!isEndDateManuallySet) {
+                        setFormEndDate(newDate);
+                      }
+                    }}
                     label={isPersian ? 'تاریخ شروع' : 'Start Date'}
                     required
                     isPersian={isPersian}
@@ -777,7 +821,10 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <PersianDatePicker
                     value={formEndDate}
-                    onChange={setFormEndDate}
+                    onChange={(newDate) => {
+                      setFormEndDate(newDate);
+                      setIsEndDateManuallySet(true);
+                    }}
                     label={isPersian ? 'تاریخ پایان' : 'End Date'}
                     required
                     isPersian={isPersian}
@@ -836,12 +883,9 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
                     required
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   >
-                    {settings.leaveTypes.map(lt => {
-                      const title = getCustomTypeTitle(lt, lang);
-                      return (
-                        <option key={title} value={title}>{title}</option>
-                      );
-                    })}
+                    {leaveTypeOptions.map(title => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -859,12 +903,9 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
                     required
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   >
-                    {settings.specialWorkTypes.map(st => {
-                      const title = getCustomTypeTitle(st, lang);
-                      return (
-                        <option key={title} value={title}>{title}</option>
-                      );
-                    })}
+                    {specialTypeOptions.map(title => (
+                      <option key={title} value={title}>{title}</option>
+                    ))}
                   </select>
                 </div>
               )}

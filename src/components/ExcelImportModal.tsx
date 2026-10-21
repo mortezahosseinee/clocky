@@ -134,30 +134,34 @@ function parseFileTime(raw: any, timezoneOffsetMinutes = 0): string {
   }
 
   // 4. Numeric value (Excel fractional day serial, direct hour, or date+time serial)
-  if (!parsed) {
-    const num = typeof raw === 'number' ? raw : parseFloat(rawStr);
-    if (!isNaN(num)) {
-      if (num >= 0 && num < 1) {
-        // Excel day fraction (e.g. 0.458333 is 11:00, 0.5 is 12:00)
-        const totalSec = Math.round(num * 86400);
-        const h = Math.floor(totalSec / 3600) % 24;
-        const m = Math.floor((totalSec % 3600) / 60);
-        totalMinutes = h * 60 + m;
-        parsed = true;
-      } else if (num >= 1 && num < 24) {
-        // Direct decimal hour (e.g. 11 is 11:00, 8.5 is 08:30, 14.25 is 14:15)
-        const h = Math.floor(num);
-        const m = Math.round((num - h) * 60);
-        totalMinutes = (h % 24) * 60 + (m % 60);
-        parsed = true;
-      } else if (num >= 1000) {
-        // Excel full date-time serial (e.g. 45234.458333)
-        const dayFraction = num - Math.floor(num);
-        const totalSec = Math.round(dayFraction * 86400);
-        const h = Math.floor(totalSec / 3600) % 24;
-        const m = Math.floor((totalSec % 3600) / 60);
-        totalMinutes = h * 60 + m;
-        parsed = true;
+  // Guard against date strings like "07/10/2026" where parseFloat would return 7!
+  if (!parsed && !/[\/\-\.]/.test(rawStr.replace(/^\d+(\.\d+)?$/, ''))) {
+    const isDateString = /\d+[\/\-]\d+/.test(rawStr);
+    if (!isDateString) {
+      const num = typeof raw === 'number' ? raw : parseFloat(rawStr);
+      if (!isNaN(num)) {
+        if (num >= 0 && num < 1) {
+          // Excel day fraction (e.g. 0.458333 is 11:00, 0.5 is 12:00)
+          const totalSec = Math.round(num * 86400);
+          const h = Math.floor(totalSec / 3600) % 24;
+          const m = Math.floor((totalSec % 3600) / 60);
+          totalMinutes = h * 60 + m;
+          parsed = true;
+        } else if (num >= 1 && num < 24) {
+          // Direct decimal hour (e.g. 11 is 11:00, 8.5 is 08:30, 14.25 is 14:15)
+          const h = Math.floor(num);
+          const m = Math.round((num - h) * 60);
+          totalMinutes = (h % 24) * 60 + (m % 60);
+          parsed = true;
+        } else if (num >= 1000) {
+          // Excel full date-time serial (e.g. 45234.458333)
+          const dayFraction = num - Math.floor(num);
+          const totalSec = Math.round(dayFraction * 86400);
+          const h = Math.floor(totalSec / 3600) % 24;
+          const m = Math.floor((totalSec % 3600) / 60);
+          totalMinutes = h * 60 + m;
+          parsed = true;
+        }
       }
     }
   }
@@ -201,17 +205,36 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     field: 'startDate' | 'startTime' | 'endDate' | 'endTime',
     value: string
   ) => {
+    const cleanVal = value.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d).toString())
+                          .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
     setParsedRows(prev =>
       prev.map(r => {
         if (r.id !== rowId) return r;
-        const updated = { ...r, [field]: value };
-        updated.durationMinutes = calculateFullDurationMinutes(
+        const updated = { ...r, [field]: cleanVal };
+        if (field === 'startDate' && r.endDate === r.startDate) {
+          updated.endDate = cleanVal;
+        }
+        const dur = calculateFullDurationMinutes(
           updated.startDate,
           updated.startTime,
           updated.endDate,
           updated.endTime
         );
+        updated.durationMinutes = dur > 0 ? dur : 60;
         return updated;
+      })
+    );
+  };
+
+  const handleLeaveTypeChange = (rowId: string, newLeaveType: string) => {
+    setParsedRows(prev =>
+      prev.map(r => {
+        if (r.id !== rowId) return r;
+        return {
+          ...r,
+          leaveType: newLeaveType,
+          projectName: newLeaveType
+        };
       })
     );
   };
@@ -279,11 +302,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
     // Header mapping
     const headerCols = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, '').toLowerCase());
-    const projectColIdx = headerCols.findIndex(h => h.includes('project') || h.includes('پروژه'));
-    const startDateColIdx = headerCols.findIndex(h => h.includes('start date') || h.includes('تاریخ شروع') || h === 'startdate' || h === 'date');
-    const startTimeColIdx = headerCols.findIndex(h => h.includes('start time') || h.includes('ساعت شروع') || h === 'starttime');
-    const endDateColIdx = headerCols.findIndex(h => h.includes('end date') || h.includes('تاریخ پایان') || h === 'enddate');
-    const endTimeColIdx = headerCols.findIndex(h => h.includes('end time') || h.includes('ساعت پایان') || h === 'endtime');
+    const projectColIdx = headerCols.findIndex(h => h.includes('project') || h.includes('پروژه') || h.includes('عنوان'));
+    const startDateColIdx = headerCols.findIndex(h => !h.includes('time') && !h.includes('ساعت') && (h.includes('start date') || h.includes('تاریخ شروع') || h === 'startdate' || h === 'date' || h === 'تاریخ'));
+    const startTimeColIdx = headerCols.findIndex(h => !h.includes('date') && !h.includes('تاریخ') && (h.includes('start time') || h.includes('ساعت شروع') || h === 'starttime' || h === 'start' || h === 'شروع'));
+    const endDateColIdx = headerCols.findIndex(h => !h.includes('time') && !h.includes('ساعت') && (h.includes('end date') || h.includes('تاریخ پایان') || h === 'enddate'));
+    const endTimeColIdx = headerCols.findIndex(h => !h.includes('date') && !h.includes('تاریخ') && (h.includes('end time') || h.includes('ساعت پایان') || h === 'endtime' || h === 'end' || h === 'پایان'));
 
     const resultRows: ParsedImportRow[] = [];
 
@@ -315,10 +338,21 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     }
 
     const resultRows: ParsedImportRow[] = rows.map((r, idx) => {
-      // Find keys case-insensitively
-      const findVal = (keywords: string[]) => {
-        for (const k of Object.keys(r)) {
+      // Find keys case-insensitively with exclusion list so "Start Date" never matches "start" time!
+      const findVal = (keywords: string[], excludeKeywords: string[] = []) => {
+        const keys = Object.keys(r);
+        // 1. Exact match first
+        for (const k of keys) {
           const lower = k.toLowerCase().replace(/[\s_\-]/g, '');
+          if (excludeKeywords.some(ex => lower.includes(ex))) continue;
+          if (keywords.some(kw => lower === kw)) {
+            return r[k];
+          }
+        }
+        // 2. Substring match second
+        for (const k of keys) {
+          const lower = k.toLowerCase().replace(/[\s_\-]/g, '');
+          if (excludeKeywords.some(ex => lower.includes(ex))) continue;
           if (keywords.some(kw => lower.includes(kw))) {
             return r[k];
           }
@@ -326,11 +360,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         return '';
       };
 
-      const rawProject = findVal(['project', 'پروژه']);
-      const rawStartDate = findVal(['startdate', 'تاریخشروع', 'date', 'تاریخ']);
-      const rawStartTime = findVal(['starttime', 'ساعتشروع', 'start']);
-      const rawEndDate = findVal(['enddate', 'تاریخپایان']) || rawStartDate;
-      const rawEndTime = findVal(['endtime', 'ساعتپایان', 'end']);
+      const rawProject = findVal(['project', 'پروژه', 'عنوان']);
+      const rawStartDate = findVal(['startdate', 'تاریخشروع', 'date', 'تاریخ'], ['time', 'ساعت', 'زمان']);
+      const rawStartTime = findVal(['starttime', 'ساعتشروع', 'start', 'شروع', 'ورود'], ['date', 'تاریخ', 'روز']);
+      const rawEndDate = findVal(['enddate', 'تاریخپایان'], ['time', 'ساعت', 'زمان']) || rawStartDate;
+      const rawEndTime = findVal(['endtime', 'ساعتپایان', 'end', 'پایان', 'خروج'], ['date', 'تاریخ', 'روز']);
 
       return mapSingleRow(rawProject, rawStartDate, rawStartTime, rawEndDate, rawEndTime, idx + 1);
     });
@@ -364,12 +398,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     let projectName = trimmedProject || (isPersian ? 'بدون نام' : 'Untitled');
     let selectedProjectId = 'CREATE_NEW';
 
-    if (pUpper === 'LEAVE' || pUpper === 'مرخصی عادی') {
+    if (pUpper === 'LEAVE' || pUpper === 'مرخصی' || pUpper === 'مرخصی عادی') {
       type = 'leave';
       leaveType = 'مرخصی عادی';
       projectName = isPersian ? 'مرخصی عادی' : 'Standard Leave';
       selectedProjectId = '';
-    } else if (pUpper === 'ILEAVE' || pUpper === 'مرخصی تولد') {
+    } else if (pUpper === 'ILEAVE' || pUpper === 'مرخصی تولد' || pUpper === 'مرخصی مناسبتی') {
       type = 'leave';
       leaveType = 'مرخصی تولد';
       projectName = isPersian ? 'مرخصی تولد' : 'Birthday Leave';
@@ -403,10 +437,37 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       }
     }
 
-    const startDate = parseFileDate(rawStartDate);
-    const startTime = parseFileTime(rawStartTime, timezoneShiftMinutes);
-    const endDate = rawEndDate ? parseFileDate(rawEndDate) : startDate;
-    const endTime = parseFileTime(rawEndTime, timezoneShiftMinutes);
+    // Auto-detect if rawStartDate and rawStartTime (or rawEndDate and rawEndTime) are swapped in the source file
+    const looksLikeTimeOnly = (val: any) => typeof val === 'string' && /^\s*\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM|ق\.ظ|ب\.ظ))?\s*$/i.test(val);
+    const looksLikeDateOnly = (val: any) => typeof val === 'string' && /^\s*\d{1,4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,4}\s*$/.test(val);
+
+    let effectiveRawStartDate = rawStartDate;
+    let effectiveRawStartTime = rawStartTime;
+    let effectiveRawEndDate = rawEndDate;
+    let effectiveRawEndTime = rawEndTime;
+
+    if (looksLikeTimeOnly(effectiveRawStartDate) && looksLikeDateOnly(effectiveRawStartTime)) {
+      const tmp = effectiveRawStartDate;
+      effectiveRawStartDate = effectiveRawStartTime;
+      effectiveRawStartTime = tmp;
+    }
+    if (looksLikeTimeOnly(effectiveRawEndDate) && looksLikeDateOnly(effectiveRawEndTime)) {
+      const tmp = effectiveRawEndDate;
+      effectiveRawEndDate = effectiveRawEndTime;
+      effectiveRawEndTime = tmp;
+    }
+    // Also handle files ordered as: Project, Start Time, End Time, Start Date, End Date
+    if (looksLikeTimeOnly(rawStartDate) && looksLikeTimeOnly(rawStartTime) && looksLikeDateOnly(rawEndDate)) {
+      effectiveRawStartTime = rawStartDate;
+      effectiveRawEndTime = rawStartTime;
+      effectiveRawStartDate = rawEndDate;
+      effectiveRawEndDate = looksLikeDateOnly(rawEndTime) ? rawEndTime : rawEndDate;
+    }
+
+    const startDate = parseFileDate(effectiveRawStartDate);
+    const startTime = parseFileTime(effectiveRawStartTime, timezoneShiftMinutes);
+    const endDate = effectiveRawEndDate ? parseFileDate(effectiveRawEndDate) : startDate;
+    const endTime = parseFileTime(effectiveRawEndTime, timezoneShiftMinutes);
 
     const durationMinutes = calculateFullDurationMinutes(startDate, startTime, endDate, endTime);
 
@@ -833,6 +894,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                                       ➕ نام جدید: {r.rawProject} (گروه عمومی)
                                     </option>
                                   )}
+                                </select>
+                              </div>
+                            ) : r.type === 'leave' ? (
+                              <div className="flex items-center gap-1.5 max-w-xs">
+                                <select
+                                  value={r.leaveType || 'مرخصی عادی'}
+                                  onChange={e => handleLeaveTypeChange(r.id, e.target.value)}
+                                  className="w-full px-2.5 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                                >
+                                  <option value="مرخصی عادی">مرخصی عادی</option>
+                                  <option value="مرخصی استعلاجی">مرخصی استعلاجی</option>
+                                  <option value="مرخصی مناسبتی">مرخصی مناسبتی</option>
+                                  <option value="مرخصی تولد">مرخصی تولد</option>
+                                  <option value="مرخصی بدون حقوق">مرخصی بدون حقوق</option>
                                 </select>
                               </div>
                             ) : (
