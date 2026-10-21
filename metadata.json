@@ -1,0 +1,6 @@
+{
+  "name": "سامانه مدیریت تردد و کارکرد کارکنان | Employee Attendance System",
+  "description": "سامانه جامع مدیریت تردد، پروژه‌ها، ماموریت، مرخصی و گزارش‌گیری پرسنل به همراه پشتیبان‌گیری خودکار، تعیین سطوح دسترسی و خروجی اکسل و PDF",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
