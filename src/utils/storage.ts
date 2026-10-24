@@ -440,32 +440,33 @@ export const StorageService = {
       // Sync active timers across devices while respecting stopped timers
       const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
       if (currentUserId) {
-        const localStoppedAt = Number(localStorage.getItem(`attendance_live_timer_stopped_${currentUserId}`) || '0');
-        const serverStoppedAt = Number(data.stoppedTimers?.[currentUserId] || '0');
-        const effectiveStoppedAt = Math.max(localStoppedAt, serverStoppedAt);
-        if (effectiveStoppedAt > localStoppedAt) {
-          localStorage.setItem(`attendance_live_timer_stopped_${currentUserId}`, String(effectiveStoppedAt));
+        const localActiveRaw = localStorage.getItem(`attendance_live_timer_${currentUserId}`);
+        let localStartTs = 0;
+        if (localActiveRaw) {
+          try {
+            const parsed = JSON.parse(localActiveRaw);
+            localStartTs = Number(parsed.startTs || parsed.startTimestamp || 0);
+          } catch {}
         }
 
+        const localStoppedAt = Number(localStorage.getItem(`attendance_live_timer_stopped_${currentUserId}`) || '0');
+        const serverStoppedAt = Number(data.stoppedTimers?.[currentUserId] || '0');
+
         const serverActive = data.activeTimers?.[currentUserId];
-        if (serverActive && typeof serverActive === 'object') {
-          const startTs = Number(serverActive.startTimestamp || 0);
-          if (startTs > effectiveStoppedAt) {
-            localStorage.setItem(`attendance_live_timer_${currentUserId}`, JSON.stringify(serverActive));
+        if (serverActive && typeof serverActive === 'object' && serverActive.isRunning) {
+          const serverStartTs = Number(serverActive.startTs || serverActive.startTimestamp || 0);
+          if (serverStartTs > localStoppedAt) {
+            const enriched = { ...serverActive, startTs: serverStartTs, startTimestamp: serverStartTs };
+            localStorage.setItem(`attendance_live_timer_${currentUserId}`, JSON.stringify(enriched));
+            localStorage.removeItem(`attendance_live_timer_stopped_${currentUserId}`);
             hasUpdated = true;
-          } else {
-            localStorage.removeItem(`attendance_live_timer_${currentUserId}`);
           }
         } else if (serverStoppedAt > 0) {
-          const localActiveRaw = localStorage.getItem(`attendance_live_timer_${currentUserId}`);
-          if (localActiveRaw) {
-            try {
-              const parsed = JSON.parse(localActiveRaw);
-              if (!parsed.startTimestamp || parsed.startTimestamp <= effectiveStoppedAt) {
-                localStorage.removeItem(`attendance_live_timer_${currentUserId}`);
-                hasUpdated = true;
-              }
-            } catch {}
+          // Only stop local timer if server's stop was STRICTLY after local timer started
+          if (localStartTs > 0 && localStartTs <= serverStoppedAt) {
+            localStorage.removeItem(`attendance_live_timer_${currentUserId}`);
+            localStorage.setItem(`attendance_live_timer_stopped_${currentUserId}`, String(serverStoppedAt));
+            hasUpdated = true;
           }
         }
       }
@@ -500,7 +501,13 @@ export const StorageService = {
       let stoppedTimers: any = undefined;
       if (currentUserId) {
         if (activeTimerRaw) {
-          try { activeTimers = { [currentUserId]: JSON.parse(activeTimerRaw) }; } catch {}
+          try {
+            const parsed = JSON.parse(activeTimerRaw);
+            const startTs = Number(parsed.startTs || parsed.startTimestamp || Date.now());
+            const enriched = { ...parsed, startTs, startTimestamp: startTs };
+            activeTimers = { [currentUserId]: enriched };
+            stoppedTimers = { [currentUserId]: 0 };
+          } catch {}
         } else if (stoppedAtRaw) {
           activeTimers = { [currentUserId]: null };
           stoppedTimers = { [currentUserId]: Number(stoppedAtRaw) };
@@ -1219,7 +1226,10 @@ export const StorageService = {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.isRunning && parsed.startTs) return parsed;
+      const startTs = Number(parsed?.startTs || parsed?.startTimestamp || 0);
+      if (parsed && parsed.isRunning && startTs > 0) {
+        return { ...parsed, startTs, startTimestamp: startTs };
+      }
       return null;
     } catch {
       return null;
@@ -1228,17 +1238,32 @@ export const StorageService = {
 
   setActiveTimer(userId: string, timer: any) {
     if (!userId) return;
-    localStorage.setItem(`attendance_live_timer_${userId}`, JSON.stringify(timer));
+    const startTs = Number(timer?.startTs || timer?.startTimestamp || Date.now());
+    const enriched = {
+      ...timer,
+      startTs,
+      startTimestamp: startTs
+    };
+    try {
+      localStorage.removeItem(`attendance_live_timer_stopped_${userId}`);
+      localStorage.removeItem(`attendance_stopped_timer_ts_${userId}`);
+    } catch {}
+    localStorage.setItem(`attendance_live_timer_${userId}`, JSON.stringify(enriched));
     fetch('/api/active-timer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, activeTimer: timer })
+      body: JSON.stringify({ userId, activeTimer: enriched })
     }).catch(() => {});
   },
 
   clearActiveTimer(userId: string) {
     if (!userId) return;
-    localStorage.removeItem(`attendance_live_timer_${userId}`);
+    const now = Date.now();
+    try {
+      localStorage.removeItem(`attendance_live_timer_${userId}`);
+      localStorage.setItem(`attendance_live_timer_stopped_${userId}`, String(now));
+      localStorage.setItem(`attendance_stopped_timer_ts_${userId}`, String(now));
+    } catch {}
     fetch('/api/active-timer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,8 +1,27 @@
 import { ChangelogItem } from '../types';
 
-export const APP_CURRENT_VERSION = 'v2.0.14';
+export const APP_CURRENT_VERSION = 'v2.0.15';
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: 'v2.0.15',
+    releaseDate: '2026-10-24',
+    releaseDateFa: '۱۴۰۵/۰۸/۰۲',
+    titleFa: 'رفع قطعی پرش و ریست شدن ثبت کارکرد زنده در داشبورد اختصاصی و حفظ مداوم زمان پس از رفرش',
+    titleEn: 'Fixed Live Work Tracker Reset Glitch in Dashboard & Preserved Timer State Across Page Reloads',
+    changesFa: [
+      'رفع کامل مشکل پرش تایمر کارکرد زنده (حالتی که چند لحظه محاسبه زمان را نشان داده و سپس صفر شده و به دکمه شروع بازمی‌گشت)',
+      'یکسان‌سازی کلیدهای شناسایی زمان شروع تایمر (startTs و startTimestamp) میان فرانت‌اند، ذخیره‌ساز مرورگر و سرور و جلوگیری از حذف تایمر فعال توسط همگام‌سازی‌های پس‌زمینه',
+      'اصلاح منطق توقف تایمر به‌گونه‌ای که تایم‌استمپ‌های توقف‌های قبلی کاربر هرگز مانع اجرای تایمر تازه شروع‌شده نشوند',
+      'حفظ و ادامه دقیق شمارش زمان ثبت کارکرد زنده در هنگام رفرش صفحه یا جابه‌جایی میان تب‌های سامانه'
+    ],
+    changesEn: [
+      'Fixed live work tracker resetting to zero after briefly showing elapsed time upon page reload or tab switch',
+      'Unified timer timestamp keys (startTs and startTimestamp) between client storage and server sync routines to prevent false cleanup',
+      'Refined stop timestamp check so previous stop events never invalidate a freshly started live tracker session',
+      'Guaranteed continuous live timer progress across page reloads and cross-component navigation'
+    ]
+  },
   {
     version: 'v2.0.14',
     releaseDate: '2026-10-21',

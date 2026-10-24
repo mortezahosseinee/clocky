@@ -71,21 +71,25 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
 
   // Sync state from storage
   const applyTimerData = (t: any) => {
-    if (t && t.isRunning && t.startTs) {
-      const stoppedTs = Number(localStorage.getItem(`attendance_stopped_timer_ts_${user.id}`) || '0');
-      if (stoppedTs && Number(t.startTs) <= stoppedTs) {
+    const startTs = Number(t?.startTs || t?.startTimestamp || 0);
+    if (t && t.isRunning && startTs > 0) {
+      const stoppedTs = Math.max(
+        Number(localStorage.getItem(`attendance_live_timer_stopped_${user.id}`) || '0'),
+        Number(localStorage.getItem(`attendance_stopped_timer_ts_${user.id}`) || '0')
+      );
+      if (stoppedTs && startTs <= stoppedTs) {
         setTimerRunning(false);
         setTimerStartTs(null);
         setSecondsElapsed(0);
         return;
       }
       setTimerRunning(true);
-      setTimerStartTs(t.startTs);
+      setTimerStartTs(startTs);
       setTimerStartTimeStr(t.startTimeStr || '');
       setTimerStartDateStr(t.startDateStr || getTodayJalali());
       setTimerProjectId(t.projectId || '');
       setTimerNotes(t.notes || '');
-      const diff = Math.floor((Date.now() - t.startTs) / 1000);
+      const diff = Math.floor((Date.now() - startTs) / 1000);
       setSecondsElapsed(diff > 0 ? diff : 0);
     } else {
       setTimerRunning(false);
@@ -103,25 +107,34 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     fetch(`/api/active-timer/${user.id}`)
       .then(res => res.json())
       .then(data => {
-        if (data && data.activeTimer && data.activeTimer.isRunning && data.activeTimer.startTs) {
-          const stoppedTs = Number(localStorage.getItem(`attendance_stopped_timer_ts_${user.id}`) || '0');
-          if (stoppedTs && Number(data.activeTimer.startTs) <= stoppedTs) {
+        if (data && data.activeTimer && data.activeTimer.isRunning) {
+          const startTs = Number(data.activeTimer.startTs || data.activeTimer.startTimestamp || 0);
+          const stoppedTs = Math.max(
+            Number(localStorage.getItem(`attendance_live_timer_stopped_${user.id}`) || '0'),
+            Number(localStorage.getItem(`attendance_stopped_timer_ts_${user.id}`) || '0')
+          );
+          if (stoppedTs && startTs <= stoppedTs) {
             StorageService.clearActiveTimer(user.id);
             applyTimerData(null);
             return;
           }
-          StorageService.setActiveTimer(user.id, data.activeTimer);
-          applyTimerData(data.activeTimer);
+          const enriched = { ...data.activeTimer, startTs, startTimestamp: startTs };
+          StorageService.setActiveTimer(user.id, enriched);
+          applyTimerData(enriched);
         } else if (data && data.activeTimer === null) {
-          localStorage.removeItem(`attendance_live_timer_${user.id}`);
-          applyTimerData(null);
+          // If local storage has a running timer, do not let null from server cancel it
+          const localRunning = StorageService.getActiveTimer(user.id);
+          if (!localRunning || !localRunning.isRunning) {
+            localStorage.removeItem(`attendance_live_timer_${user.id}`);
+            applyTimerData(null);
+          }
         }
       })
       .catch(() => {});
 
     // Listen to local sync events between Dashboard and WorkRecordsView
     const handleTimerSync = (e: any) => {
-      if (e && 'detail' in e) {
+      if (e && e.type === 'active_timer_sync' && 'detail' in e) {
         applyTimerData(e.detail);
       } else {
         const current = StorageService.getActiveTimer(user.id);
@@ -165,6 +178,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     const timer = {
       isRunning: true,
       startTs,
+      startTimestamp: startTs,
       startTimeStr,
       startDateStr,
       projectId: prjId,
@@ -180,6 +194,11 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     setSecondsElapsed(0);
     setTimerRunning(true);
     setTimerSuccessNotice(null);
+
+    try {
+      localStorage.removeItem(`attendance_stopped_timer_ts_${user.id}`);
+      localStorage.removeItem(`attendance_live_timer_stopped_${user.id}`);
+    } catch {}
 
     StorageService.setActiveTimer(user.id, timer);
     window.dispatchEvent(new CustomEvent('active_timer_sync', { detail: timer }));
@@ -361,6 +380,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
                     const updated = {
                       isRunning: true,
                       startTs: timerStartTs,
+                      startTimestamp: timerStartTs,
                       startTimeStr: timerStartTimeStr,
                       startDateStr: timerStartDateStr,
                       projectId: e.target.value,
@@ -401,6 +421,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
                     const updated = {
                       isRunning: true,
                       startTs: timerStartTs,
+                      startTimestamp: timerStartTs,
                       startTimeStr: timerStartTimeStr,
                       startDateStr: timerStartDateStr,
                       projectId: timerProjectId,

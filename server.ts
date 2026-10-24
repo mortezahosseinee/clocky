@@ -330,13 +330,16 @@ app.post('/api/sync', async (req, res) => {
     const mergedStoppedTimers: Record<string, number> = { ...(existing.stoppedTimers || {}) };
     if (payload.stoppedTimers && typeof payload.stoppedTimers === 'object') {
       for (const [uid, stoppedAt] of Object.entries(payload.stoppedTimers)) {
-        const ts = Number(stoppedAt) || Date.now();
-        if (!mergedStoppedTimers[uid] || ts > mergedStoppedTimers[uid]) {
-          mergedStoppedTimers[uid] = ts;
-        }
-        const active = mergedActiveTimers[uid];
-        if (active && (!active.startTimestamp || active.startTimestamp <= ts)) {
-          delete mergedActiveTimers[uid];
+        const ts = Number(stoppedAt) || 0;
+        if (ts > 0) {
+          if (!mergedStoppedTimers[uid] || ts > mergedStoppedTimers[uid]) {
+            mergedStoppedTimers[uid] = ts;
+          }
+          const active = mergedActiveTimers[uid];
+          const activeStart = (active as any)?.startTs || (active as any)?.startTimestamp || 0;
+          if (active && (!activeStart || activeStart <= ts)) {
+            delete mergedActiveTimers[uid];
+          }
         }
       }
     }
@@ -346,10 +349,11 @@ app.post('/api/sync', async (req, res) => {
           delete mergedActiveTimers[uid];
           mergedStoppedTimers[uid] = Date.now();
         } else if (timer && typeof timer === 'object') {
+          const startTs = (timer as any).startTs || (timer as any).startTimestamp || 0;
           const stoppedAt = mergedStoppedTimers[uid] || 0;
-          const startTs = (timer as any).startTimestamp || 0;
-          if (startTs > stoppedAt) {
-            mergedActiveTimers[uid] = timer;
+          if (startTs >= stoppedAt) {
+            mergedActiveTimers[uid] = { ...timer, startTs, startTimestamp: startTs };
+            delete mergedStoppedTimers[uid];
           }
         }
       }
@@ -612,7 +616,11 @@ app.post('/api/active-timer', (req, res) => {
     if (!existing.activeTimers) existing.activeTimers = {};
     if (!existing.stoppedTimers) existing.stoppedTimers = {};
     if (activeTimer) {
-      existing.activeTimers[userId] = activeTimer;
+      const startTs = activeTimer.startTs || activeTimer.startTimestamp || Date.now();
+      existing.activeTimers[userId] = { ...activeTimer, startTs, startTimestamp: startTs };
+      if (existing.stoppedTimers) {
+        delete existing.stoppedTimers[userId];
+      }
     } else {
       delete existing.activeTimers[userId];
       existing.stoppedTimers[userId] = Date.now();
@@ -1504,11 +1512,11 @@ app.delete('/api/groups/:id', async (req, res) => {
 });
 
 // Application Version Endpoint
-const SERVER_APP_VERSION = 'v2.0.14';
+const SERVER_APP_VERSION = 'v2.0.15';
 app.get('/api/version', (req, res) => {
   res.json({
     version: SERVER_APP_VERSION,
-    releaseDate: '1405/07/29',
+    releaseDate: '1405/08/02',
     timestamp: Date.now()
   });
 });
