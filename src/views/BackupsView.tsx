@@ -4,7 +4,7 @@ import { translations, Language } from '../utils/translations';
 import { StorageService } from '../utils/storage';
 import { exportTableToPdfPrint, exportTableToExcel, ExportColumn } from '../utils/export';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { formatMinutes } from '../utils/jalali';
+import { formatMinutes, toPersianDigits } from '../utils/jalali';
 import {
   DatabaseBackup,
   Download,
@@ -228,8 +228,8 @@ export const BackupsView: React.FC<BackupsViewProps> = ({ user, lang }) => {
             <h3 className="font-bold text-sm text-slate-800">
               {isPersian ? 'فهرست فایل‌های پشتیبان ماهانه' : 'Monthly Archive Files'}
             </h3>
-            <span className="text-xs text-slate-400 font-b-nazanin">
-              {filteredAndSortedBackups.length} {isPersian ? 'فایل' : 'files'}
+            <span className="text-xs text-slate-400 font-b-nazanin font-b-mitra">
+              {isPersian ? toPersianDigits(filteredAndSortedBackups.length) : filteredAndSortedBackups.length} {isPersian ? 'فایل' : 'files'}
             </span>
           </div>
 

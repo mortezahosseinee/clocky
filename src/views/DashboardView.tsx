@@ -599,7 +599,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
             <div className="mr-auto text-xs text-slate-500 font-semibold font-b-nazanin py-2">
               {isPersian ? 'تعداد رکورد فیلترشده:' : 'Records:'}{' '}
-              <span className="text-slate-900 font-bold">{filteredRecords.length}</span>
+              <span className="text-slate-900 font-bold font-b-mitra text-sm">
+                {isPersian ? toPersianDigits(filteredRecords.length) : filteredRecords.length}
+              </span>
             </div>
           </div>
         </div>
@@ -710,8 +712,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {isPersian ? 'تفکیک کارکرد پروژه‌ها بر اساس فیلتر اعمال‌شده' : 'Filtered Project Hours Breakdown'}
               </h3>
             </div>
-            <span className="text-xs text-slate-400 font-b-nazanin">
-              {projectBreakdown.length} {isPersian ? 'پروژه فعال دارای کارکرد' : 'projects'}
+            <span className="text-xs text-slate-400 font-b-nazanin font-b-mitra">
+              {isPersian ? toPersianDigits(projectBreakdown.length) : projectBreakdown.length} {isPersian ? 'پروژه فعال دارای کارکرد' : 'projects'}
             </span>
           </div>
 
@@ -834,8 +836,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <h3 className="font-bold text-base text-slate-800">
             {isPersian ? 'رکوردهای کارکرد مطابق فیلتر' : 'Tracked Records in Selected Period'}
           </h3>
-          <span className="text-xs text-slate-500 font-b-nazanin">
-            {isPersian ? `${sortedRecords.length} رکورد یافت شد` : `${sortedRecords.length} records found`}
+          <span className="text-xs text-slate-500 font-b-nazanin font-b-mitra">
+            {isPersian ? `${toPersianDigits(sortedRecords.length)} رکورد یافت شد` : `${sortedRecords.length} records found`}
           </span>
         </div>
 

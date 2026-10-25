@@ -6,7 +6,8 @@ import {
   getTodayJalali,
   getCurrentJalaliParts,
   getDaysInJalaliMonth,
-  jalaliToGregorian
+  jalaliToGregorian,
+  toPersianDigits
 } from '../utils/jalali';
 
 interface PersianDatePickerProps {
@@ -114,8 +115,8 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
         }}
         className="w-full flex items-center justify-between px-3 py-2 bg-white border border-slate-300 rounded-lg shadow-xs cursor-pointer hover:border-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-hidden text-sm transition-colors text-right"
       >
-        <span className={value ? 'text-slate-800 font-medium' : 'text-slate-400'}>
-          {value || (isPersian ? 'انتخاب تاریخ شمسی...' : 'Select Jalali Date...')}
+        <span className={value ? 'text-slate-800 font-medium font-b-mitra text-xs' : 'text-slate-400'}>
+          {value ? (isPersian ? toPersianDigits(value) : value) : (isPersian ? 'انتخاب تاریخ شمسی...' : 'Select Jalali Date...')}
         </span>
         <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
       </button>
@@ -131,8 +132,8 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
             >
               <ChevronRight className="w-4 h-4" />
             </button>
-            <div className="font-bold text-sm text-slate-800">
-              {PERSIAN_MONTHS[viewMonth - 1]} {viewYear}
+            <div className="font-bold text-sm text-slate-800 font-b-mitra">
+              {PERSIAN_MONTHS[viewMonth - 1]} {isPersian ? toPersianDigits(viewYear) : viewYear}
             </div>
             <button
               type="button"
@@ -168,13 +169,13 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
                   type="button"
                   key={day}
                   onClick={() => handleSelectDay(day)}
-                  className={`h-7 w-7 mx-auto rounded-full text-xs font-medium transition-colors flex items-center justify-center ${
+                  className={`h-7 w-7 mx-auto rounded-full text-xs font-bold font-b-mitra transition-colors flex items-center justify-center ${
                     isSelected
                       ? 'bg-blue-600 text-white'
                       : 'hover:bg-blue-50 text-slate-700'
                   }`}
                 >
-                  {day}
+                  {isPersian ? toPersianDigits(day) : day}
                 </button>
               );
             })}

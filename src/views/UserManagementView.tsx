@@ -677,7 +677,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
         >
           <div className="flex items-center gap-1.5">
             <Users className="w-4 h-4" />
-            <span>{isPersian ? `کاربران جاری (${users.length})` : `Active Users (${users.length})`}</span>
+            <span>{isPersian ? `کاربران جاری (${toPersianDigits(users.length)})` : `Active Users (${users.length})`}</span>
           </div>
         </button>
 
@@ -869,7 +869,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
 
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="p-3 text-center text-slate-400">{idx + 1}</td>
+                      <td className="p-3 text-center text-slate-400 font-b-mitra">{isPersian ? toPersianDigits(idx + 1) : idx + 1}</td>
                       <td className="p-3 font-bold text-slate-900 text-sm">
                         {u.firstName} {u.lastName}
                       </td>

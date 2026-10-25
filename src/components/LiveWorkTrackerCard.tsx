@@ -6,9 +6,10 @@ import {
   getTodayJalali,
   calculateFullDurationMinutes,
   formatMinutes,
-  addMinutesToTime
+  addMinutesToTime,
+  jalaliToGregorian
 } from '../utils/jalali';
-import { Play, Square, Timer, FolderKanban, CheckCircle2, X } from 'lucide-react';
+import { Play, Square, Timer, FolderKanban, CheckCircle2, X, Calendar, Clock } from 'lucide-react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 interface LiveWorkTrackerCardProps {
@@ -35,11 +36,17 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     return projectsList.filter(p => Array.isArray(p.groupIds) && p.groupIds.some(gid => userGroups.includes(gid)));
   }, [projectsList, isAdmin, user.groupIds]);
 
+  // Initial time helper
+  const getCurrentTimeStr = () => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  };
+
   // Live Timer State
   const [timerRunning, setTimerRunning] = useState(false);
   const [timerStartTs, setTimerStartTs] = useState<number | null>(null);
-  const [timerStartTimeStr, setTimerStartTimeStr] = useState('');
-  const [timerStartDateStr, setTimerStartDateStr] = useState('');
+  const [timerStartTimeStr, setTimerStartTimeStr] = useState(getCurrentTimeStr);
+  const [timerStartDateStr, setTimerStartDateStr] = useState(getTodayJalali);
   const [timerProjectId, setTimerProjectId] = useState('');
   const [timerNotes, setTimerNotes] = useState('');
   const [secondsElapsed, setSecondsElapsed] = useState(0);
@@ -57,6 +64,21 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       }
     }
   });
+
+  // Calculate precise timestamp from Jalali date and HH:mm time in local timezone
+  const recalculateStartTs = (dateStr: string, timeStr: string): number => {
+    try {
+      const safeDate = dateStr && dateStr.includes('/') ? dateStr : getTodayJalali();
+      const [jy, jm, jd] = safeDate.split('/').map(Number);
+      const [h, m] = (timeStr || '00:00').split(':').map(Number);
+      const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
+      const d = new Date(gy, gm - 1, gd, h || 0, m || 0, 0);
+      const ts = d.getTime();
+      return isNaN(ts) ? Date.now() : ts;
+    } catch {
+      return Date.now();
+    }
+  };
 
   // Format digital stopwatch in Persian digits and B Mitra font
   const formatStopwatchPersian = (totalSeconds: number) => {
@@ -85,7 +107,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       }
       setTimerRunning(true);
       setTimerStartTs(startTs);
-      setTimerStartTimeStr(t.startTimeStr || '');
+      setTimerStartTimeStr(t.startTimeStr || getCurrentTimeStr());
       setTimerStartDateStr(t.startDateStr || getTodayJalali());
       setTimerProjectId(t.projectId || '');
       setTimerNotes(t.notes || '');
@@ -122,7 +144,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
           StorageService.setActiveTimer(user.id, enriched);
           applyTimerData(enriched);
         } else if (data && data.activeTimer === null) {
-          // If local storage has a running timer, do not let null from server cancel it
+          // If local storage has a running timer, do not let null from server cancel it immediately
           const localRunning = StorageService.getActiveTimer(user.id);
           if (!localRunning || !localRunning.isRunning) {
             localStorage.removeItem(`attendance_live_timer_${user.id}`);
@@ -167,11 +189,56 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     };
   }, [timerRunning, timerStartTs]);
 
+  // Live update start time
+  const handleStartTimeChange = (newTime: string) => {
+    setTimerStartTimeStr(newTime);
+    if (timerRunning) {
+      const newTs = recalculateStartTs(timerStartDateStr, newTime);
+      setTimerStartTs(newTs);
+      const diff = Math.floor((Date.now() - newTs) / 1000);
+      setSecondsElapsed(diff > 0 ? diff : 0);
+      const updated = {
+        isRunning: true,
+        startTs: newTs,
+        startTimestamp: newTs,
+        startTimeStr: newTime,
+        startDateStr: timerStartDateStr,
+        projectId: timerProjectId,
+        notes: timerNotes,
+        userId: user.id
+      };
+      StorageService.setActiveTimer(user.id, updated);
+      window.dispatchEvent(new CustomEvent('active_timer_sync', { detail: updated }));
+    }
+  };
+
+  // Live update start date
+  const handleStartDateChange = (newDate: string) => {
+    setTimerStartDateStr(newDate);
+    if (timerRunning) {
+      const newTs = recalculateStartTs(newDate, timerStartTimeStr);
+      setTimerStartTs(newTs);
+      const diff = Math.floor((Date.now() - newTs) / 1000);
+      setSecondsElapsed(diff > 0 ? diff : 0);
+      const updated = {
+        isRunning: true,
+        startTs: newTs,
+        startTimestamp: newTs,
+        startTimeStr: timerStartTimeStr,
+        startDateStr: newDate,
+        projectId: timerProjectId,
+        notes: timerNotes,
+        userId: user.id
+      };
+      StorageService.setActiveTimer(user.id, updated);
+      window.dispatchEvent(new CustomEvent('active_timer_sync', { detail: updated }));
+    }
+  };
+
   const handleStartTimer = (overrideProjectId?: string, overrideNotes?: string) => {
-    const now = new Date();
-    const startTs = Date.now();
-    const startTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const startDateStr = getTodayJalali();
+    const chosenDate = timerStartDateStr || getTodayJalali();
+    const chosenTime = timerStartTimeStr || getCurrentTimeStr();
+    const startTs = recalculateStartTs(chosenDate, chosenTime);
     const prjId = overrideProjectId !== undefined ? overrideProjectId : timerProjectId;
     const notes = overrideNotes !== undefined ? overrideNotes : timerNotes;
 
@@ -179,19 +246,20 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       isRunning: true,
       startTs,
       startTimestamp: startTs,
-      startTimeStr,
-      startDateStr,
+      startTimeStr: chosenTime,
+      startDateStr: chosenDate,
       projectId: prjId,
       notes,
       userId: user.id
     };
 
     setTimerStartTs(startTs);
-    setTimerStartTimeStr(startTimeStr);
-    setTimerStartDateStr(startDateStr);
+    setTimerStartTimeStr(chosenTime);
+    setTimerStartDateStr(chosenDate);
     setTimerProjectId(prjId);
     setTimerNotes(notes);
-    setSecondsElapsed(0);
+    const diff = Math.floor((Date.now() - startTs) / 1000);
+    setSecondsElapsed(diff > 0 ? diff : 0);
     setTimerRunning(true);
     setTimerSuccessNotice(null);
 
@@ -246,6 +314,8 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     setSecondsElapsed(0);
     setTimerProjectId('');
     setTimerNotes('');
+    setTimerStartTimeStr(getCurrentTimeStr());
+    setTimerStartDateStr(getTodayJalali());
     setIsMissingProjectModalOpen(false);
 
     StorageService.clearActiveTimer(user.id);
@@ -312,42 +382,96 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
         }`}
       >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
-          {/* Title and Status */}
-          <div className="flex items-center gap-3.5">
-            <div
-              className={`p-3 rounded-xl ${
-                timerRunning
-                  ? 'bg-emerald-500/20 text-emerald-300 ring-2 ring-emerald-400/30 animate-pulse'
-                  : 'bg-blue-50 text-blue-600 border border-blue-100'
-              }`}
-            >
-              <Timer className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className={`text-base font-bold ${timerRunning ? 'text-white' : 'text-slate-900'}`}>
-                  {isPersian ? 'ثبت کارکرد زنده' : 'Live Work Tracker'}
-                </h3>
-                {timerRunning ? (
-                  <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/40">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span>{isPersian ? 'در حال ثبت کارکرد...' : 'Tracking work time...'}</span>
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
-                    {isPersian ? 'آماده شروع' : 'Ready'}
-                  </span>
-                )}
+          {/* Title, Status and Live Date/Time controls */}
+          <div className="space-y-3 w-full lg:w-auto">
+            <div className="flex items-center gap-3.5">
+              <div
+                className={`p-3 rounded-xl ${
+                  timerRunning
+                    ? 'bg-emerald-500/20 text-emerald-300 ring-2 ring-emerald-400/30 animate-pulse'
+                    : 'bg-blue-50 text-blue-600 border border-blue-100'
+                }`}
+              >
+                <Timer className="w-6 h-6" />
               </div>
-              <p className={`text-xs mt-0.5 font-b-nazanin ${timerRunning ? 'text-emerald-200/80' : 'text-slate-500'}`}>
-                {timerRunning
-                  ? (isPersian
-                      ? `شروع از ساعت ${toPersianDigits(timerStartTimeStr)} در تاریخ ${toPersianDigits(timerStartDateStr)}`
-                      : `Started at ${timerStartTimeStr} on ${timerStartDateStr}`)
-                  : (isPersian
-                      ? 'پروژه را انتخاب کنید و دکمه شروع را بزنید تا ساعت کارکرد محاسبه و ثبت شود.'
-                      : 'Select project and click Start to track and save work hours.')}
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className={`text-base font-bold ${timerRunning ? 'text-white' : 'text-slate-900'}`}>
+                    {isPersian ? 'ثبت کارکرد زنده' : 'Live Work Tracker'}
+                  </h3>
+                  {timerRunning ? (
+                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/40">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                      <span>{isPersian ? 'در حال ثبت کارکرد...' : 'Tracking work time...'}</span>
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
+                      {isPersian ? 'آماده شروع' : 'Ready'}
+                    </span>
+                  )}
+                </div>
+                <p className={`text-xs mt-0.5 font-b-nazanin ${timerRunning ? 'text-emerald-200/80' : 'text-slate-500'}`}>
+                  {timerRunning
+                    ? (isPersian
+                        ? 'تغییر تاریخ یا ساعت شروع در زیر، بلافاصله در محاسبه زمان سپری‌شده اعمال می‌شود.'
+                        : 'Editing start date or time below updates elapsed timer live.')
+                    : (isPersian
+                        ? 'پروژه را انتخاب کنید و دکمه شروع را بزنید تا ساعت کارکرد محاسبه و ثبت شود.'
+                        : 'Select project and click Start to track and save work hours.')}
+                </p>
+              </div>
+            </div>
+
+            {/* Editable Start Date & Start Time - Live customizable */}
+            <div className={`flex flex-wrap items-center gap-2.5 p-2 rounded-xl border ${
+              timerRunning
+                ? 'bg-emerald-950/40 border-emerald-500/30'
+                : 'bg-slate-50 border-slate-200'
+            }`}>
+              {/* Start Date */}
+              <div className="flex items-center gap-1.5">
+                <Calendar className={`w-3.5 h-3.5 ${timerRunning ? 'text-emerald-300' : 'text-slate-400'}`} />
+                <span className={`text-[11px] font-bold font-b-nazanin ${timerRunning ? 'text-emerald-200' : 'text-slate-600'}`}>
+                  {isPersian ? 'تاریخ شروع:' : 'Start Date:'}
+                </span>
+                <input
+                  type="text"
+                  value={timerStartDateStr}
+                  onChange={e => handleStartDateChange(e.target.value)}
+                  placeholder="1405/08/03"
+                  className={`w-28 px-2.5 py-1 rounded-lg text-xs font-b-mitra font-bold text-center border focus:outline-hidden transition-colors ${
+                    timerRunning
+                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400'
+                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
+                  }`}
+                  dir="ltr"
+                />
+              </div>
+
+              {/* Start Time */}
+              <div className="flex items-center gap-1.5">
+                <Clock className={`w-3.5 h-3.5 ${timerRunning ? 'text-emerald-300' : 'text-slate-400'}`} />
+                <span className={`text-[11px] font-bold font-b-nazanin ${timerRunning ? 'text-emerald-200' : 'text-slate-600'}`}>
+                  {isPersian ? 'ساعت شروع:' : 'Start Time:'}
+                </span>
+                <input
+                  type="time"
+                  value={timerStartTimeStr}
+                  onChange={e => handleStartTimeChange(e.target.value)}
+                  className={`w-24 px-2 py-1 rounded-lg text-xs font-b-mitra font-time font-bold text-center border focus:outline-hidden transition-colors ${
+                    timerRunning
+                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400'
+                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
+                  }`}
+                  dir="ltr"
+                />
+              </div>
+
+              {timerRunning && (
+                <span className="text-[10px] text-emerald-300/80 font-b-nazanin hidden sm:inline">
+                  {isPersian ? '(محاسبه لایو زمان بر اساس ساعت بالا)' : '(Live recalculation active)'}
+                </span>
+              )}
             </div>
           </div>
 

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { User, Group } from '../types';
 import { translations, Language } from '../utils/translations';
 import { StorageService } from '../utils/storage';
-import { getTodayJalali } from '../utils/jalali';
+import { getTodayJalali, toPersianDigits } from '../utils/jalali';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import {
@@ -292,7 +292,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ user, lang }) => {
                 <div className="pt-2 border-t border-slate-100">
                   <div className="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
                     <Users className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{isPersian ? 'اعضای عضو گروه:' : 'Members:'} ({members.length})</span>
+                    <span>{isPersian ? 'اعضای عضو گروه:' : 'Members:'} ({isPersian ? toPersianDigits(members.length) : members.length})</span>
                   </div>
                   <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
                     {members.map(m => (

@@ -3,6 +3,7 @@ import { User, SystemLog } from '../types';
 import { translations, Language } from '../utils/translations';
 import { StorageService } from '../utils/storage';
 import { exportTableToPdfPrint, exportTableToExcel, ExportColumn } from '../utils/export';
+import { toPersianDigits } from '../utils/jalali';
 import {
   History,
   Download,
@@ -314,7 +315,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ user, lang }) => {
             <tbody className="divide-y divide-slate-100 font-b-nazanin">
               {filteredLogs.map((log, idx) => (
                 <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="p-3 text-center text-slate-400">{idx + 1}</td>
+                  <td className="p-3 text-center text-slate-400 font-b-mitra">{isPersian ? toPersianDigits(idx + 1) : idx + 1}</td>
                   <td className="p-3 font-mono font-bold text-slate-900">{log.username}</td>
                   <td className="p-3">
                     <span className="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold bg-slate-100 text-slate-800">
@@ -323,8 +324,8 @@ export const LogsView: React.FC<LogsViewProps> = ({ user, lang }) => {
                   </td>
                   <td className="p-3 text-slate-700 leading-relaxed max-w-md">{log.details}</td>
                   <td className="p-3 font-mono text-slate-500" dir="ltr">{log.ip}</td>
-                  <td className="p-3 text-slate-400 font-mono" dir="ltr">
-                    {new Date(log.timestamp).toLocaleString(isPersian ? 'fa-IR' : 'en-US')}
+                  <td className="p-3 text-slate-600 font-b-mitra text-xs" dir="ltr">
+                    {isPersian ? toPersianDigits(new Date(log.timestamp).toLocaleString('fa-IR')) : new Date(log.timestamp).toLocaleString('en-US')}
                   </td>
                 </tr>
               ))}

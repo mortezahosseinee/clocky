@@ -100,7 +100,7 @@ export function formatJalaliDisplay(jalaliDateStr: string, isPersian = true): st
   const [y, m, d] = parts;
   if (isPersian) {
     const monthName = PERSIAN_MONTHS[m - 1] || '';
-    return `${d} ${monthName} ${y}`;
+    return toPersianDigits(`${d} ${monthName} ${y}`);
   } else {
     const monthName = ENGLISH_MONTH_EQUIVALENTS[m - 1] || '';
     return `${d} ${monthName} ${y}`;

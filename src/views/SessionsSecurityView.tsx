@@ -315,8 +315,8 @@ export const SessionsSecurityView: React.FC<SessionsSecurityViewProps> = ({ user
               <Ban className="w-4 h-4 text-red-600" />
               <span>{isPersian ? 'لیست سیاه آدرس‌های IP مسدود شده' : 'Blacklisted IP Addresses'}</span>
             </h3>
-            <span className="text-xs text-slate-400 font-b-nazanin font-bold">
-              {settings.blockedIps.length} مورد
+            <span className="text-xs text-slate-400 font-b-nazanin font-b-mitra font-bold">
+              {isPersian ? toPersianDigits(settings.blockedIps.length) : settings.blockedIps.length} مورد
             </span>
           </div>
 

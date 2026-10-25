@@ -645,7 +645,7 @@ export const WorkRecordsView: React.FC<WorkRecordsViewProps> = ({
 
                 return (
                   <tr key={rec.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="p-3 text-center text-slate-400 font-medium">{idx + 1}</td>
+                    <td className="p-3 text-center text-slate-400 font-medium font-b-mitra">{isPersian ? toPersianDigits(idx + 1) : idx + 1}</td>
                     <td className="p-3 font-semibold text-slate-800 font-b-mitra text-xs text-right">
                       {isPersian ? formatDateWithWeekday(rec.startDate || rec.date) : (rec.startDate || rec.date)}
                     </td>

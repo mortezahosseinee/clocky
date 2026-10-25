@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, GitCommit, Calendar, Tag } from 'lucide-react';
 import { CHANGELOG, APP_CURRENT_VERSION } from '../utils/changelog';
+import { toPersianDigits } from '../utils/jalali';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 
 interface ChangelogModalProps {
@@ -71,10 +72,10 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold font-mono ${
+                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold font-b-mitra ${
                       isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'
                     }`}>
-                      {item.version}
+                      {isPersian ? toPersianDigits(item.version) : item.version}
                     </span>
                     {isCurrent && (
                       <span className="text-[11px] font-semibold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
@@ -82,9 +83,9 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400 font-b-mitra">
                     <Calendar className="w-3.5 h-3.5" />
-                    <span>{isPersian ? item.releaseDateFa : item.releaseDate}</span>
+                    <span>{isPersian ? toPersianDigits(item.releaseDateFa) : item.releaseDate}</span>
                   </div>
                 </div>
 

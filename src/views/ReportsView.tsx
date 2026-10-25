@@ -819,10 +819,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ user, lang }) => {
             </span>
           </h3>
 
-          <span className="text-xs text-slate-500 font-b-nazanin">
+          <span className="text-xs text-slate-500 font-b-nazanin font-b-mitra">
             {reportFormat === 'detailed'
-              ? `${filteredAndSortedRecords.length} ${isPersian ? 'رکورد کارکرد' : 'records'}`
-              : `${summaryData.length} ${isPersian ? 'سطر تجمیعی پرسنل' : 'summary rows'}`}
+              ? (isPersian ? `${toPersianDigits(filteredAndSortedRecords.length)} رکورد کارکرد` : `${filteredAndSortedRecords.length} records`)
+              : (isPersian ? `${toPersianDigits(summaryData.length)} سطر تجمیعی پرسنل` : `${summaryData.length} summary rows`)}
           </span>
         </div>
 
@@ -940,7 +940,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ user, lang }) => {
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="p-3 text-center text-slate-400">{idx + 1}</td>
+                      <td className="p-3 text-center text-slate-400 font-b-mitra">{isPersian ? toPersianDigits(idx + 1) : idx + 1}</td>
                       <td className="p-3 font-bold text-slate-900">
                         {u ? `${u.firstName} ${u.lastName}` : r.userId}
                       </td>
@@ -1076,7 +1076,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ user, lang }) => {
               <tbody className="divide-y divide-slate-100 font-b-nazanin">
                 {summaryData.map((row, idx) => (
                   <tr key={row.userId} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="p-3 text-center text-slate-400">{idx + 1}</td>
+                    <td className="p-3 text-center text-slate-400 font-b-mitra">{isPersian ? toPersianDigits(idx + 1) : idx + 1}</td>
                     <td className="p-3 font-bold text-slate-900 text-sm">{row.userName}</td>
                     <td className="p-3 text-slate-600">{row.jobTitle}</td>
                     <td className="p-3 text-slate-800 font-semibold">{formatMinutes(row.regularMinutes, isPersian)}</td>
