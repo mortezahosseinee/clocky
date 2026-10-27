@@ -117,6 +117,8 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       setTimerRunning(false);
       setTimerStartTs(null);
       setSecondsElapsed(0);
+      setTimerStartTimeStr(getCurrentTimeStr());
+      setTimerStartDateStr(getTodayJalali());
     }
   };
 
@@ -189,6 +191,19 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     };
   }, [timerRunning, timerStartTs]);
 
+  // 3. Keep start time/date synchronized with real-time clock when idle (not running)
+  useEffect(() => {
+    if (!timerRunning) {
+      setTimerStartTimeStr(getCurrentTimeStr());
+      setTimerStartDateStr(getTodayJalali());
+      const clockInterval = setInterval(() => {
+        setTimerStartTimeStr(getCurrentTimeStr());
+        setTimerStartDateStr(getTodayJalali());
+      }, 1000);
+      return () => clearInterval(clockInterval);
+    }
+  }, [timerRunning]);
+
   // Live update start time
   const handleStartTimeChange = (newTime: string) => {
     setTimerStartTimeStr(newTime);
@@ -236,9 +251,9 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
   };
 
   const handleStartTimer = (overrideProjectId?: string, overrideNotes?: string) => {
-    const chosenDate = timerStartDateStr || getTodayJalali();
-    const chosenTime = timerStartTimeStr || getCurrentTimeStr();
-    const startTs = recalculateStartTs(chosenDate, chosenTime);
+    const currentNowTime = getCurrentTimeStr();
+    const currentTodayDate = getTodayJalali();
+    const startTs = Date.now();
     const prjId = overrideProjectId !== undefined ? overrideProjectId : timerProjectId;
     const notes = overrideNotes !== undefined ? overrideNotes : timerNotes;
 
@@ -246,20 +261,19 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       isRunning: true,
       startTs,
       startTimestamp: startTs,
-      startTimeStr: chosenTime,
-      startDateStr: chosenDate,
+      startTimeStr: currentNowTime,
+      startDateStr: currentTodayDate,
       projectId: prjId,
       notes,
       userId: user.id
     };
 
     setTimerStartTs(startTs);
-    setTimerStartTimeStr(chosenTime);
-    setTimerStartDateStr(chosenDate);
+    setTimerStartTimeStr(currentNowTime);
+    setTimerStartDateStr(currentTodayDate);
     setTimerProjectId(prjId);
     setTimerNotes(notes);
-    const diff = Math.floor((Date.now() - startTs) / 1000);
-    setSecondsElapsed(diff > 0 ? diff : 0);
+    setSecondsElapsed(0);
     setTimerRunning(true);
     setTimerSuccessNotice(null);
 
@@ -288,12 +302,15 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     if (!timerRunning || !timerStartTs) return;
 
     const stoppedStartTs = timerStartTs;
+    const recStartDate = timerStartDateStr;
+    const recStartTime = timerStartTimeStr;
+
     // Calculate elapsed duration strictly from start timestamp, independent of device timezone
     const elapsedSeconds = Math.max(1, Math.floor((Date.now() - stoppedStartTs) / 1000));
     const durationMins = Math.max(1, Math.round(elapsedSeconds / 60));
 
     // Calculate end time and end date purely by adding duration to start time (100% timezone independent)
-    const { endDateJalali, endTime } = addMinutesToTime(timerStartDateStr, timerStartTimeStr, durationMins);
+    const { endDateJalali, endTime } = addMinutesToTime(recStartDate, recStartTime, durationMins);
     const endDateStr = endDateJalali;
     const endTimeStr = endTime;
 
@@ -325,11 +342,11 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       id: `rec-${Date.now()}`,
       userId: user.id,
       type: 'regular',
-      startDate: timerStartDateStr,
-      startTime: timerStartTimeStr,
+      startDate: recStartDate,
+      startTime: recStartTime,
       endDate: endDateStr,
       endTime: endTimeStr,
-      date: timerStartDateStr,
+      date: recStartDate,
       durationMinutes: durationMins,
       projectId: finalProjectId || undefined,
       notes: finalNotes || (isPersian ? 'ثبت کارکرد' : 'Work record tracked'),
@@ -340,13 +357,13 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     StorageService.saveAttendanceRecord(newRecord);
     StorageService.addLog(
       'CREATE_ATTENDANCE',
-      `ثبت کارکرد از ${timerStartDateStr} ${timerStartTimeStr} تا ${endDateStr} ${endTimeStr} (${formatMinutes(durationMins, isPersian)}) [${prjName}]`
+      `ثبت کارکرد از ${recStartDate} ${recStartTime} تا ${endDateStr} ${endTimeStr} (${formatMinutes(durationMins, isPersian)}) [${prjName}]`
     );
 
     setTimerSuccessNotice(
       isPersian
-        ? `کارکرد با موفقیت ثبت شد: از ${toPersianDigits(timerStartTimeStr)} تا ${toPersianDigits(endTimeStr)} (مدت: ${formatMinutes(durationMins, isPersian)}) - [${prjName}]`
-        : `Work record saved: from ${timerStartTimeStr} to ${endTimeStr} (${formatMinutes(durationMins, isPersian)}) - [${prjName}]`
+        ? `کارکرد با موفقیت ثبت شد: از ${toPersianDigits(recStartTime)} تا ${toPersianDigits(endTimeStr)} (مدت: ${formatMinutes(durationMins, isPersian)}) - [${prjName}]`
+        : `Work record saved: from ${recStartTime} to ${endTimeStr} (${formatMinutes(durationMins, isPersian)}) - [${prjName}]`
     );
 
     if (onRecordSaved) {
@@ -432,17 +449,20 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
               <div className="flex items-center gap-1.5">
                 <Calendar className={`w-3.5 h-3.5 ${timerRunning ? 'text-emerald-300' : 'text-slate-400'}`} />
                 <span className={`text-[11px] font-bold font-b-nazanin ${timerRunning ? 'text-emerald-200' : 'text-slate-600'}`}>
-                  {isPersian ? 'تاریخ شروع:' : 'Start Date:'}
+                  {timerRunning
+                    ? (isPersian ? 'ویرایش تاریخ شروع:' : 'Edit Start Date:')
+                    : (isPersian ? 'تاریخ شروع:' : 'Start Date:')}
                 </span>
                 <input
                   type="text"
                   value={timerStartDateStr}
                   onChange={e => handleStartDateChange(e.target.value)}
+                  disabled={!timerRunning}
                   placeholder="1405/08/03"
                   className={`w-28 px-2.5 py-1 rounded-lg text-xs font-b-mitra font-bold text-center border focus:outline-hidden transition-colors ${
                     timerRunning
-                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400'
-                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
+                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400 cursor-pointer'
+                      : 'bg-slate-100 text-slate-500 border-slate-200 cursor-default opacity-90'
                   }`}
                   dir="ltr"
                 />
@@ -452,24 +472,31 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
               <div className="flex items-center gap-1.5">
                 <Clock className={`w-3.5 h-3.5 ${timerRunning ? 'text-emerald-300' : 'text-slate-400'}`} />
                 <span className={`text-[11px] font-bold font-b-nazanin ${timerRunning ? 'text-emerald-200' : 'text-slate-600'}`}>
-                  {isPersian ? 'ساعت شروع:' : 'Start Time:'}
+                  {timerRunning
+                    ? (isPersian ? 'ویرایش ساعت شروع:' : 'Edit Start Time:')
+                    : (isPersian ? 'ساعت شروع:' : 'Start Time:')}
                 </span>
                 <input
                   type="time"
                   value={timerStartTimeStr}
                   onChange={e => handleStartTimeChange(e.target.value)}
+                  disabled={!timerRunning}
                   className={`w-24 px-2 py-1 rounded-lg text-xs font-b-mitra font-time font-bold text-center border focus:outline-hidden transition-colors ${
                     timerRunning
-                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400'
-                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
+                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400 cursor-pointer'
+                      : 'bg-slate-100 text-slate-500 border-slate-200 cursor-default opacity-90'
                   }`}
                   dir="ltr"
                 />
               </div>
 
-              {timerRunning && (
+              {timerRunning ? (
                 <span className="text-[10px] text-emerald-300/80 font-b-nazanin hidden sm:inline">
                   {isPersian ? '(محاسبه لایو زمان بر اساس ساعت بالا)' : '(Live recalculation active)'}
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-b-nazanin hidden sm:inline">
+                  {isPersian ? '(با شروع کارکرد از زمان جاری آغاز می‌شود)' : '(Starts from current time)'}
                 </span>
               )}
             </div>

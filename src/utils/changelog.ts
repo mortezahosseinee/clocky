@@ -1,8 +1,27 @@
 import { ChangelogItem } from "../types";
 
-export const APP_CURRENT_VERSION = "v2.0.16";
+export const APP_CURRENT_VERSION = "v2.0.17";
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: "v2.0.17",
+    releaseDate: "2026-10-27",
+    releaseDateFa: "۱۴۰۵/۰۸/۰۵",
+    titleFa:
+      "بازنشانی خودکار زمان شروع ثبت کارکرد زنده به زمان جاری پس از پایان و شروع همواره از لحظه فشردن دکمه",
+    titleEn:
+      "Auto Reset Live Tracker Start Time to Current Clock on Stop & Always Start Fresh from Click Moment",
+    changesFa: [
+      "رفع مشکل حفظ شدن ساعت دستی تنظیم‌شده در دفعات بعدی و اطمینان از شروع تایمر از همان لحظه فشردن دکمه شروع",
+      "همگام‌سازی مداوم و خودکار فیلد ساعت شروع با زمان واقعی سیستم در حالت آماده به کار (Idle)",
+      "بازگشت خودکار بخش ویرایش ساعت و تاریخ شروع به حالت اولیه بلافاصله پس از ثبت و پایان کارکرد",
+    ],
+    changesEn: [
+      "Fixed manual start time persisting on subsequent work tracking sessions, ensuring it always starts from the click moment",
+      "Continuously synchronized start time display with the real-time system clock while idle",
+      "Automatically reset start time and date edit fields to the initial live clock state immediately upon finishing",
+    ],
+  },
   {
     version: "v2.0.16",
     releaseDate: "2026-10-25",
