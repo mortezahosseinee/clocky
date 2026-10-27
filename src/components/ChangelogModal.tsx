@@ -85,16 +85,26 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-slate-400 font-b-mitra">
                     <Calendar className="w-3.5 h-3.5" />
-                    <span>{isPersian ? toPersianDigits(item.releaseDateFa) : item.releaseDate}</span>
+                    <span>
+                      {isPersian
+                        ? toPersianDigits(item.releaseDateFa || item.releaseDate || (item as any).date || '')
+                        : (item.releaseDate || item.releaseDateFa || (item as any).date || '')}
+                    </span>
                   </div>
                 </div>
 
                 <h4 className="text-sm font-bold text-slate-800 mb-2">
-                  {isPersian ? item.titleFa : item.titleEn}
+                  {isPersian
+                    ? (item.titleFa || (item as any).title || item.titleEn || '')
+                    : (item.titleEn || (item as any).title || item.titleFa || '')}
                 </h4>
 
                 <ul className="space-y-1.5 text-xs text-slate-600 list-disc pr-4 pl-4">
-                  {(isPersian ? item.changesFa : item.changesEn).map((change, cIdx) => (
+                  {(
+                    (isPersian
+                      ? (item.changesFa || (item as any).changes || item.changesEn)
+                      : (item.changesEn || (item as any).changes || item.changesFa)) || []
+                  ).map((change, cIdx) => (
                     <li key={cIdx} className="leading-relaxed">
                       {change}
                     </li>
