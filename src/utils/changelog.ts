@@ -1,8 +1,29 @@
 import { ChangelogItem } from "../types";
 
-export const APP_CURRENT_VERSION = "v2.0.17";
+export const APP_CURRENT_VERSION = "v2.0.18";
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: "v2.0.18",
+    releaseDate: "2026-10-28",
+    releaseDateFa: "۱۴۰۵/۰۸/۰۶",
+    titleFa:
+      "امکان تایپ مستقیم و دستی ساعت و تاریخ به همراه لیست بازشونده سریع در تمام فرم‌ها",
+    titleEn:
+      "Direct Keyboard Typing & Fast Dropdown Lists for Time and Date Pickers across All Forms",
+    changesFa: [
+      "حذف سلکت‌های کوچک و طوماری ساعت/دقیقه و جایگزینی با فیلد قابل تایپ مستقیم با کیبورد",
+      "افزودن لیست بازشونده انتخاب سریع زمان‌ها در گام‌های پرکاربرد (۱۵ و ۳۰ دقیقه‌ای) و دکمه‌های فوری",
+      "پشتیبانی از تایپ مستقیم تاریخ شمسی با صفحه‌کلید به همراه تقویم گرافیکی بازشونده",
+      "فعال‌سازی امکان ویرایش دستی و تایپ زمان در ثبت کارکرد زنده، مرخصی، ماموریت و کارکرد خاص",
+    ],
+    changesEn: [
+      "Removed microscopic dropdown selects for time and enabled direct keyboard input",
+      "Added fast dropdown panel with common 15/30-minute intervals and quick preset buttons",
+      "Enabled direct Jalali date keyboard typing while maintaining graphical calendar picker",
+      "Enabled flexible manual typing for live tracker, leave, mission, and special work forms",
+    ],
+  },
   {
     version: "v2.0.17",
     releaseDate: "2026-10-27",

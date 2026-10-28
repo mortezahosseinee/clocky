@@ -47,6 +47,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
   const [timerStartTs, setTimerStartTs] = useState<number | null>(null);
   const [timerStartTimeStr, setTimerStartTimeStr] = useState(getCurrentTimeStr);
   const [timerStartDateStr, setTimerStartDateStr] = useState(getTodayJalali);
+  const [isManualStartSet, setIsManualStartSet] = useState(false);
   const [timerProjectId, setTimerProjectId] = useState('');
   const [timerNotes, setTimerNotes] = useState('');
   const [secondsElapsed, setSecondsElapsed] = useState(0);
@@ -191,9 +192,9 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     };
   }, [timerRunning, timerStartTs]);
 
-  // 3. Keep start time/date synchronized with real-time clock when idle (not running)
+  // 3. Keep start time/date synchronized with real-time clock when idle unless manually edited
   useEffect(() => {
-    if (!timerRunning) {
+    if (!timerRunning && !isManualStartSet) {
       setTimerStartTimeStr(getCurrentTimeStr());
       setTimerStartDateStr(getTodayJalali());
       const clockInterval = setInterval(() => {
@@ -202,11 +203,12 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       }, 1000);
       return () => clearInterval(clockInterval);
     }
-  }, [timerRunning]);
+  }, [timerRunning, isManualStartSet]);
 
   // Live update start time
   const handleStartTimeChange = (newTime: string) => {
     setTimerStartTimeStr(newTime);
+    setIsManualStartSet(true);
     if (timerRunning) {
       const newTs = recalculateStartTs(timerStartDateStr, newTime);
       setTimerStartTs(newTs);
@@ -230,6 +232,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
   // Live update start date
   const handleStartDateChange = (newDate: string) => {
     setTimerStartDateStr(newDate);
+    setIsManualStartSet(true);
     if (timerRunning) {
       const newTs = recalculateStartTs(newDate, timerStartTimeStr);
       setTimerStartTs(newTs);
@@ -251,9 +254,9 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
   };
 
   const handleStartTimer = (overrideProjectId?: string, overrideNotes?: string) => {
-    const currentNowTime = getCurrentTimeStr();
-    const currentTodayDate = getTodayJalali();
-    const startTs = Date.now();
+    const chosenDate = isManualStartSet ? (timerStartDateStr || getTodayJalali()) : getTodayJalali();
+    const chosenTime = isManualStartSet ? (timerStartTimeStr || getCurrentTimeStr()) : getCurrentTimeStr();
+    const startTs = isManualStartSet ? recalculateStartTs(chosenDate, chosenTime) : Date.now();
     const prjId = overrideProjectId !== undefined ? overrideProjectId : timerProjectId;
     const notes = overrideNotes !== undefined ? overrideNotes : timerNotes;
 
@@ -261,19 +264,20 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
       isRunning: true,
       startTs,
       startTimestamp: startTs,
-      startTimeStr: currentNowTime,
-      startDateStr: currentTodayDate,
+      startTimeStr: chosenTime,
+      startDateStr: chosenDate,
       projectId: prjId,
       notes,
       userId: user.id
     };
 
     setTimerStartTs(startTs);
-    setTimerStartTimeStr(currentNowTime);
-    setTimerStartDateStr(currentTodayDate);
+    setTimerStartTimeStr(chosenTime);
+    setTimerStartDateStr(chosenDate);
     setTimerProjectId(prjId);
     setTimerNotes(notes);
-    setSecondsElapsed(0);
+    const diff = Math.floor((Date.now() - startTs) / 1000);
+    setSecondsElapsed(diff > 0 ? diff : 0);
     setTimerRunning(true);
     setTimerSuccessNotice(null);
 
@@ -333,6 +337,7 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
     setTimerNotes('');
     setTimerStartTimeStr(getCurrentTimeStr());
     setTimerStartDateStr(getTodayJalali());
+    setIsManualStartSet(false);
     setIsMissingProjectModalOpen(false);
 
     StorageService.clearActiveTimer(user.id);
@@ -457,12 +462,11 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
                   type="text"
                   value={timerStartDateStr}
                   onChange={e => handleStartDateChange(e.target.value)}
-                  disabled={!timerRunning}
                   placeholder="1405/08/03"
                   className={`w-28 px-2.5 py-1 rounded-lg text-xs font-b-mitra font-bold text-center border focus:outline-hidden transition-colors ${
                     timerRunning
                       ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400 cursor-pointer'
-                      : 'bg-slate-100 text-slate-500 border-slate-200 cursor-default opacity-90'
+                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
                   }`}
                   dir="ltr"
                 />
@@ -480,11 +484,10 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
                   type="time"
                   value={timerStartTimeStr}
                   onChange={e => handleStartTimeChange(e.target.value)}
-                  disabled={!timerRunning}
                   className={`w-24 px-2 py-1 rounded-lg text-xs font-b-mitra font-time font-bold text-center border focus:outline-hidden transition-colors ${
                     timerRunning
                       ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400 cursor-pointer'
-                      : 'bg-slate-100 text-slate-500 border-slate-200 cursor-default opacity-90'
+                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
                   }`}
                   dir="ltr"
                 />

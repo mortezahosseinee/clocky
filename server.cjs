@@ -29496,11 +29496,11 @@ app.delete("/api/groups/:id", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
-var SERVER_APP_VERSION = "v2.0.17";
+var SERVER_APP_VERSION = "v2.0.18";
 app.get("/api/version", (req, res) => {
   res.json({
     version: SERVER_APP_VERSION,
-    releaseDate: "1405/08/05",
+    releaseDate: "1405/08/06",
     timestamp: Date.now()
   });
 });
