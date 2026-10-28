@@ -11,6 +11,8 @@ import {
 } from '../utils/jalali';
 import { Play, Square, Timer, FolderKanban, CheckCircle2, X, Calendar, Clock } from 'lucide-react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { TimePicker } from './TimePicker';
+import { PersianDatePicker } from './PersianDatePicker';
 
 interface LiveWorkTrackerCardProps {
   user: User;
@@ -444,64 +446,45 @@ export const LiveWorkTrackerCard: React.FC<LiveWorkTrackerCardProps> = ({
               </div>
             </div>
 
-            {/* Editable Start Date & Start Time - Live customizable */}
-            <div className={`flex flex-wrap items-center gap-2.5 p-2 rounded-xl border ${
+            {/* Editable Start Date & Start Time - Live customizable with direct typing & dropdown pickers */}
+            <div className={`p-2.5 rounded-xl border mt-2 ${
               timerRunning
                 ? 'bg-emerald-950/40 border-emerald-500/30'
                 : 'bg-slate-50 border-slate-200'
             }`}>
-              {/* Start Date */}
-              <div className="flex items-center gap-1.5">
-                <Calendar className={`w-3.5 h-3.5 ${timerRunning ? 'text-emerald-300' : 'text-slate-400'}`} />
-                <span className={`text-[11px] font-bold font-b-nazanin ${timerRunning ? 'text-emerald-200' : 'text-slate-600'}`}>
-                  {timerRunning
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                {/* Start Date */}
+                <PersianDatePicker
+                  value={timerStartDateStr}
+                  onChange={handleStartDateChange}
+                  label={timerRunning
                     ? (isPersian ? 'ویرایش تاریخ شروع:' : 'Edit Start Date:')
                     : (isPersian ? 'تاریخ شروع:' : 'Start Date:')}
-                </span>
-                <input
-                  type="text"
-                  value={timerStartDateStr}
-                  onChange={e => handleStartDateChange(e.target.value)}
-                  placeholder="1405/08/03"
-                  className={`w-28 px-2.5 py-1 rounded-lg text-xs font-b-mitra font-bold text-center border focus:outline-hidden transition-colors ${
-                    timerRunning
-                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400 cursor-pointer'
-                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
-                  }`}
-                  dir="ltr"
+                  isPersian={isPersian}
                 />
-              </div>
 
-              {/* Start Time */}
-              <div className="flex items-center gap-1.5">
-                <Clock className={`w-3.5 h-3.5 ${timerRunning ? 'text-emerald-300' : 'text-slate-400'}`} />
-                <span className={`text-[11px] font-bold font-b-nazanin ${timerRunning ? 'text-emerald-200' : 'text-slate-600'}`}>
-                  {timerRunning
+                {/* Start Time */}
+                <TimePicker
+                  value={timerStartTimeStr}
+                  onChange={handleStartTimeChange}
+                  label={timerRunning
                     ? (isPersian ? 'ویرایش ساعت شروع:' : 'Edit Start Time:')
                     : (isPersian ? 'ساعت شروع:' : 'Start Time:')}
-                </span>
-                <input
-                  type="time"
-                  value={timerStartTimeStr}
-                  onChange={e => handleStartTimeChange(e.target.value)}
-                  className={`w-24 px-2 py-1 rounded-lg text-xs font-b-mitra font-time font-bold text-center border focus:outline-hidden transition-colors ${
-                    timerRunning
-                      ? 'bg-emerald-950/80 text-white border-emerald-400/50 focus:ring-2 focus:ring-emerald-400 cursor-pointer'
-                      : 'bg-white text-slate-800 border-slate-300 focus:ring-2 focus:ring-blue-500'
-                  }`}
-                  dir="ltr"
+                  isPersian={isPersian}
                 />
               </div>
 
-              {timerRunning ? (
-                <span className="text-[10px] text-emerald-300/80 font-b-nazanin hidden sm:inline">
-                  {isPersian ? '(محاسبه لایو زمان بر اساس ساعت بالا)' : '(Live recalculation active)'}
-                </span>
-              ) : (
-                <span className="text-[10px] text-slate-400 font-b-nazanin hidden sm:inline">
-                  {isPersian ? '(با شروع کارکرد از زمان جاری آغاز می‌شود)' : '(Starts from current time)'}
-                </span>
-              )}
+              <div className="mt-2 text-center sm:text-right">
+                {timerRunning ? (
+                  <span className="text-[10px] text-emerald-300/80 font-b-nazanin inline-block">
+                    {isPersian ? '(محاسبه لایو زمان بر اساس ساعت بالا)' : '(Live recalculation active)'}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-b-nazanin inline-block">
+                    {isPersian ? '(با شروع کارکرد از زمان جاری آغاز می‌شود یا می‌توانید دستی تنظیم کنید)' : '(Starts from current time or you can set manually)'}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

@@ -1,8 +1,27 @@
 import { ChangelogItem } from "../types";
 
-export const APP_CURRENT_VERSION = "v2.0.18";
+export const APP_CURRENT_VERSION = "v2.0.19";
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: "v2.0.19",
+    releaseDate: "2026-10-28",
+    releaseDateFa: "۱۴۰۵/۰۸/۰۶",
+    titleFa:
+      "باز شدن هوشمند منوی ساعت به سمت بالا در مودال‌ها و ارتقای فیلد ساعت ثبت زنده به انتخابگر کامل",
+    titleEn:
+      "Smart Upward Positioning of Time/Date Pickers in Modals & Unified Picker in Live Work Tracker",
+    changesFa: [
+      "تشخیص هوشمند فضای باقیمانده در مودال‌ها و باز شدن منوی ساعت/تاریخ به سمت بالا (Upward) برای جلوگیری از بریده شدن یا رفتن زیر مودال",
+      "جایگزینی فیلد زمان در کارت «ثبت کارکرد زنده» با انتخابگر کامل ساعت جهت امکان تایپ آزاد و استفاده از لیست بازشونده",
+      "افزایش اولویت لایه (z-index) منوهای بازشونده برای قرارگیری بالاتر از تمام عناصر مجاور فرم",
+    ],
+    changesEn: [
+      "Smart positioning detection to open time/date dropdowns upwards when bottom space in modals is limited",
+      "Upgraded live work tracker card to use full TimePicker and PersianDatePicker components with direct typing",
+      "Elevated dropdown z-index to ensure visibility above all adjacent modal elements",
+    ],
+  },
   {
     version: "v2.0.18",
     releaseDate: "2026-10-28",

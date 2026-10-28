@@ -1512,7 +1512,7 @@ app.delete('/api/groups/:id', async (req, res) => {
 });
 
 // Application Version Endpoint
-const SERVER_APP_VERSION = 'v2.0.18';
+const SERVER_APP_VERSION = 'v2.0.19';
 app.get('/api/version', (req, res) => {
   res.json({
     version: SERVER_APP_VERSION,

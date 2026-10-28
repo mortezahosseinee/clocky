@@ -25,6 +25,7 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
   required = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpwards, setOpenUpwards] = useState(false);
   const [inputValue, setInputValue] = useState(value || '');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -59,6 +60,28 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Detect whether to open upwards or downwards to avoid clipping in modals / scroll containers
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const scrollParent = dropdownRef.current.closest('.overflow-y-auto') || dropdownRef.current.closest('.overflow-auto');
+      if (scrollParent) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        const spaceInParentBelow = parentRect.bottom - rect.bottom;
+        if (spaceInParentBelow < 280 && rect.top - parentRect.top > 200) {
+          setOpenUpwards(true);
+          return;
+        }
+      }
+      if (spaceBelow < 280 && rect.top > 250) {
+        setOpenUpwards(true);
+      } else {
+        setOpenUpwards(false);
+      }
+    }
+  }, [isOpen]);
 
   // Parse and validate manual date input
   const parseJalaliInput = (raw: string): string | null => {
@@ -157,7 +180,7 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
   };
 
   return (
-    <div className="relative w-full" ref={dropdownRef}>
+    <div className={`relative w-full ${isOpen ? 'z-40' : ''}`} ref={dropdownRef}>
       {label && (
         <label className="block text-xs font-semibold text-slate-700 mb-1">
           {label} {required && <span className="text-red-500">*</span>}
@@ -209,7 +232,13 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1.5 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
+        <div
+          className={`absolute z-50 ${
+            openUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          } ${
+            isPersian ? 'right-0' : 'left-0'
+          } w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 text-slate-800 animate-in fade-in zoom-in-95 duration-100`}
+        >
           {/* Header Month / Year Navigation */}
           <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
             <button

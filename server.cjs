@@ -29496,7 +29496,7 @@ app.delete("/api/groups/:id", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
-var SERVER_APP_VERSION = "v2.0.18";
+var SERVER_APP_VERSION = "v2.0.19";
 app.get("/api/version", (req, res) => {
   res.json({
     version: SERVER_APP_VERSION,
