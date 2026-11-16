@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { User } from './types';
 import { StorageService } from './utils/storage';
 import { translations, Language } from './utils/translations';
@@ -24,6 +25,61 @@ import { SettingsView } from './views/SettingsView';
 import { SessionsSecurityView } from './views/SessionsSecurityView';
 import { MessengerView } from './views/MessengerView';
 import { AllRecordsView } from './views/AllRecordsView';
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  isPersian?: boolean;
+  onReset?: () => void;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ViewErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('View render error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      const isPersian = this.props.isPersian ?? true;
+      return (
+        <div className="p-8 my-6 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/50 rounded-2xl shadow-sm text-center">
+          <div className="w-12 h-12 mx-auto mb-4 bg-red-50 dark:bg-red-950/40 text-red-600 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-2">
+            {isPersian ? 'خطا در بارگذاری این بخش' : 'Failed to load this view'}
+          </h3>
+          <p className="text-xs text-slate-500 mb-4 max-w-md mx-auto">
+            {this.state.error?.message || (isPersian ? 'یک خطای غیرمنتظره در بارگذاری داده‌ها رخ داد.' : 'An unexpected error occurred.')}
+          </p>
+          <button
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              if (this.props.onReset) this.props.onReset();
+            }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+          >
+            {isPersian ? 'تلاش مجدد و بارگذاری' : 'Retry'}
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() =>
@@ -210,7 +266,8 @@ export default function App() {
         />
 
         <main className="flex-1 p-3 sm:p-5 lg:p-6 max-w-7xl w-full mx-auto">
-          {activeTab === 'dashboard' && (
+          <ViewErrorBoundary isPersian={lang === 'fa'} onReset={() => setActiveTab('dashboard')}>
+            {activeTab === 'dashboard' && (
             <DashboardView
               user={currentUser}
               lang={lang}
@@ -339,6 +396,7 @@ export default function App() {
               lang={lang}
             />
           )}
+          </ViewErrorBoundary>
         </main>
       </div>
 

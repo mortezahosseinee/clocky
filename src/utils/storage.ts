@@ -932,7 +932,12 @@ export const StorageService = {
       const list = JSON.parse(raw);
       if (!Array.isArray(list)) return [];
       const deletedProjectIds = this.getDeletedProjectIds();
-      const clean = list.filter((p: any) => p && p.id && !['prj-1', 'prj-2', 'prj-3'].includes(p.id) && !deletedProjectIds.includes(p.id));
+      const clean = list
+        .filter((p: any) => p && p.id && !['prj-1', 'prj-2', 'prj-3'].includes(p.id) && !deletedProjectIds.includes(p.id))
+        .map((p: any) => ({
+          ...p,
+          groupIds: Array.isArray(p.groupIds) ? p.groupIds : (Array.isArray(p.group_ids) ? p.group_ids : [])
+        }));
       if (clean.length !== list.length) {
         localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(clean));
       }

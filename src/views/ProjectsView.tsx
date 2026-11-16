@@ -6,7 +6,7 @@ import { PersianDatePicker } from '../components/PersianDatePicker';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { exportTableToPdfPrint, exportTableToExcel, ExportColumn } from '../utils/export';
-import { formatMinutes, getTodayJalali } from '../utils/jalali';
+import { formatMinutes, getTodayJalali, toPersianDigits } from '../utils/jalali';
 import {
   FolderKanban,
   Plus,
@@ -35,8 +35,8 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
   const canManageProjects = isAdmin || isExecutive;
 
   const [projects, setProjects] = useState<Project[]>(() => StorageService.getProjects());
-  const allGroups = StorageService.getGroups();
-  const allRecords = StorageService.getAttendanceRecords();
+  const [allGroups, setAllGroups] = useState<Group[]>(() => StorageService.getGroups());
+  const [allRecords, setAllRecords] = useState<AttendanceRecord[]>(() => StorageService.getAttendanceRecords());
 
   // Filters
   const [filterStartDate, setFilterStartDate] = useState('');
@@ -62,7 +62,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
   const isModalFormDirty = useMemo(() => {
     const initTitle = editingProject ? editingProject.title : '';
     const initDesc = editingProject ? (editingProject.description || '') : '';
-    const initGroups = editingProject ? editingProject.groupIds : [];
+    const initGroups = editingProject ? (Array.isArray(editingProject.groupIds) ? editingProject.groupIds : []) : [];
     const initActive = editingProject ? editingProject.isActive : true;
 
     if (formTitle !== initTitle) return true;
@@ -79,16 +79,19 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
     }
   });
 
-  const reloadProjects = () => {
+  const reloadData = () => {
     setProjects(StorageService.getProjects());
+    setAllGroups(StorageService.getGroups());
+    setAllRecords(StorageService.getAttendanceRecords());
   };
 
   useEffect(() => {
     const handleSync = () => {
-      reloadProjects();
+      reloadData();
     };
     window.addEventListener('app_storage_synced', handleSync);
     window.addEventListener('storage', handleSync);
+    StorageService.syncFromServer().then(handleSync);
     return () => {
       window.removeEventListener('app_storage_synced', handleSync);
       window.removeEventListener('storage', handleSync);
@@ -102,16 +105,17 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
       return projects;
     }
     const userGroups = Array.isArray(user.groupIds) ? user.groupIds : [];
-    return projects.filter(p =>
-      Array.isArray(p.groupIds) && p.groupIds.some(gid => userGroups.includes(gid))
-    );
+    return projects.filter(p => {
+      const gids = Array.isArray(p.groupIds) ? p.groupIds : [];
+      return gids.some(gid => userGroups.includes(gid));
+    });
   }, [projects, isAdmin, isExecutive, user.groupIds]);
 
   // Calculate hours worked by user (or total if admin/inspector) on each project
   const projectStats = useMemo(() => {
     const stats: Record<string, number> = {};
 
-    allRecords.forEach(r => {
+    (allRecords || []).forEach(r => {
       if (!r.projectId) return;
       // Date filter check
       const recDate = r.startDate || r.date || '';
@@ -123,7 +127,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
         return;
       }
 
-      stats[r.projectId] = (stats[r.projectId] || 0) + r.durationMinutes;
+      stats[r.projectId] = (stats[r.projectId] || 0) + (r.durationMinutes || 0);
     });
 
     return stats;
@@ -133,11 +137,16 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
   const processedProjects = useMemo(() => {
     return visibleProjects
       .filter(p => {
+        if (!p) return false;
         if (filterStatus === 'active' && !p.isActive) return false;
         if (filterStatus === 'inactive' && p.isActive) return false;
-        if (filterGroupId !== 'all' && !p.groupIds.includes(filterGroupId)) return false;
+        const gids = Array.isArray(p.groupIds) ? p.groupIds : [];
+        if (filterGroupId !== 'all' && !gids.includes(filterGroupId)) return false;
 
-        if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase()) && !p.description?.toLowerCase().includes(searchQuery.toLowerCase())) {
+        const pTitle = (p.title || '').toLowerCase();
+        const pDesc = (p.description || '').toLowerCase();
+        const query = searchQuery.toLowerCase().trim();
+        if (query && !pTitle.includes(query) && !pDesc.includes(query)) {
           return false;
         }
         return true;
@@ -149,11 +158,13 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
       .sort((a, b) => {
         let diff = 0;
         if (sortField === 'title') {
-          diff = a.title.localeCompare(b.title);
+          diff = (a.title || '').localeCompare(b.title || '');
         } else if (sortField === 'groups') {
-          diff = a.groupIds.length - b.groupIds.length;
+          const aLen = Array.isArray(a.groupIds) ? a.groupIds.length : 0;
+          const bLen = Array.isArray(b.groupIds) ? b.groupIds.length : 0;
+          diff = aLen - bLen;
         } else if (sortField === 'hours') {
-          diff = a.calculatedMinutes - b.calculatedMinutes;
+          diff = (a.calculatedMinutes || 0) - (b.calculatedMinutes || 0);
         } else if (sortField === 'status') {
           diff = (a.isActive === b.isActive ? 0 : a.isActive ? 1 : -1);
         } else if (sortField === 'notes') {
@@ -184,10 +195,10 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
 
   const handleOpenEdit = (p: Project) => {
     setEditingProject(p);
-    setFormTitle(p.title);
+    setFormTitle(p.title || '');
     setFormDescription(p.description || '');
-    setFormGroupIds(p.groupIds);
-    setFormIsActive(p.isActive);
+    setFormGroupIds(Array.isArray(p.groupIds) ? p.groupIds : []);
+    setFormIsActive(p.isActive !== false);
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -219,14 +230,14 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
     );
 
     setIsModalOpen(false);
-    reloadProjects();
+    reloadData();
   };
 
   const handleDelete = () => {
     if (deleteTargetId) {
       StorageService.deleteProject(deleteTargetId);
       setDeleteTargetId(null);
-      reloadProjects();
+      reloadData();
     }
   };
 
@@ -240,7 +251,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
         key: 'groupIds',
         width: 22,
         format: (gids: string[]) =>
-          gids.map(gid => allGroups.find(g => g.id === gid)?.name).filter(Boolean).join(', ')
+          (Array.isArray(gids) ? gids : []).map(gid => allGroups.find(g => g.id === gid)?.name).filter(Boolean).join(', ')
       },
       {
         header: t.statusCol,
@@ -276,7 +287,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
         key: 'groupIds',
         width: 25,
         format: (gids: string[]) =>
-          gids.map(gid => allGroups.find(g => g.id === gid)?.name).filter(Boolean).join(', ')
+          (Array.isArray(gids) ? gids : []).map(gid => allGroups.find(g => g.id === gid)?.name).filter(Boolean).join(', ')
       },
       {
         header: t.statusCol,
@@ -494,13 +505,15 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({ user, lang }) => {
             </thead>
             <tbody className="divide-y divide-slate-100 font-b-nazanin">
               {processedProjects.map((prj, idx) => {
-                const assignedGroupNames = prj.groupIds
+                const assignedGroupNames = (Array.isArray(prj.groupIds) ? prj.groupIds : [])
                   .map(gid => allGroups.find(g => g.id === gid)?.name)
                   .filter(Boolean);
 
                 return (
                   <tr key={prj.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="p-3 text-center text-slate-400">{idx + 1}</td>
+                    <td className="p-3 text-center text-slate-400 font-b-mitra">
+                      {isPersian ? toPersianDigits(idx + 1) : idx + 1}
+                    </td>
                     <td className="p-3 font-bold text-slate-900 text-sm">
                       {prj.title}
                     </td>
