@@ -437,6 +437,28 @@ export const StorageService = {
         localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(mergedSessions));
       }
 
+      // Sync registration requests across devices
+      if (Array.isArray(data.requests)) {
+        const localRequests = this.getRegistrationRequests();
+        const map = new Map<string, RegistrationRequest>();
+        data.requests.forEach((sr: any) => {
+          if (sr && sr.id) map.set(sr.id, sr);
+        });
+        localRequests.forEach(lr => {
+          const s = map.get(lr.id);
+          if (!s) {
+            map.set(lr.id, lr);
+            shouldPushBack = true;
+          } else if (lr.status !== s.status && lr.status !== 'pending') {
+            map.set(lr.id, { ...s, status: lr.status });
+            shouldPushBack = true;
+          }
+        });
+        const mergedRequests = Array.from(map.values()).sort((a, b) => (b.requestedAt || '').localeCompare(a.requestedAt || ''));
+        localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(mergedRequests));
+        hasUpdated = true;
+      }
+
       // Sync active timers across devices while respecting stopped timers
       const currentUserId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
       if (currentUserId) {
@@ -524,6 +546,7 @@ export const StorageService = {
         deletedProjectIds: this.getDeletedProjectIds(),
         settings: this.getSettings(),
         sessions: this.getSessions(),
+        requests: this.getRegistrationRequests(),
         activeTimers,
         stoppedTimers
       };
@@ -1124,6 +1147,18 @@ export const StorageService = {
     requests.unshift(newRequest);
     localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
     this.addLog('SUBMIT_REGISTRATION_REQUEST', `درخواست عضویت جدید توسط ${req.firstName} ${req.lastName} (${req.email}) ثبت گردید.`);
+
+    // Push immediately to server
+    if (typeof window !== 'undefined') {
+      fetch('/api/registration-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRequest)
+      }).catch(() => {});
+    }
+    this.pushToServer();
+    schedulePushToServer();
+
     return { success: true };
   },
 
@@ -1134,6 +1169,15 @@ export const StorageService = {
       target.status = status;
       localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(requests));
     }
+    if (typeof window !== 'undefined') {
+      fetch(`/api/registration-requests/${encodeURIComponent(requestId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      }).catch(() => {});
+    }
+    this.pushToServer();
+    schedulePushToServer();
   },
 
   getSessions(): UserSession[] {

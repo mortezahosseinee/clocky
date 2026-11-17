@@ -94,6 +94,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ user, lang }) => {
     };
     window.addEventListener('app_storage_synced', handleSync);
     window.addEventListener('storage', handleSync);
+    StorageService.syncFromServer().then(handleSync);
     return () => {
       window.removeEventListener('app_storage_synced', handleSync);
       window.removeEventListener('storage', handleSync);

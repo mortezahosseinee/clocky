@@ -28090,6 +28090,18 @@ if (process.env.SQL_HOST) {
       );
     `).catch(() => {
     });
+    pgPool.query(`
+      CREATE TABLE IF NOT EXISTS registration_requests (
+        id VARCHAR(64) PRIMARY KEY,
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        mobile VARCHAR(50),
+        job_title VARCHAR(150),
+        requested_at VARCHAR(32) NOT NULL,
+        status VARCHAR(32) DEFAULT 'pending'
+      );
+    `).catch(() => {});
   } catch (err) {
     console.warn("Could not initialize PostgreSQL connection:", err);
   }
@@ -28114,6 +28126,17 @@ app.get("/api/sync", async (req, res) => {
         const projectsRes = await pgPool.query("SELECT * FROM projects").catch(() => ({ rows: [] }));
         const attRes = await pgPool.query("SELECT * FROM attendance_records").catch(() => ({ rows: [] }));
         const settingsRes = await pgPool.query("SELECT * FROM system_settings WHERE id = 1").catch(() => ({ rows: [] }));
+        const reqRes = await pgPool.query("SELECT * FROM registration_requests ORDER BY requested_at DESC").catch(() => ({ rows: [] }));
+        const requests = (reqRes.rows || []).map((r) => ({
+          id: r.id,
+          firstName: r.first_name,
+          lastName: r.last_name,
+          email: r.email,
+          mobile: r.mobile || void 0,
+          jobTitle: r.job_title || void 0,
+          requestedAt: r.requested_at,
+          status: r.status || "pending"
+        }));
         const users = usersRes.rows.map((r) => ({
           id: r.id,
           username: r.username,
@@ -28196,6 +28219,7 @@ app.get("/api/sync", async (req, res) => {
           deletedGroupIds,
           deletedAttendanceIds,
           settings,
+          requests: requests.length > 0 ? requests : (existingFile.requests || []),
           activeTimers: existingFile.activeTimers || {},
           stoppedTimers: existingFile.stoppedTimers || {},
           sessions: existingFile.sessions || [],
@@ -28353,6 +28377,20 @@ app.post("/api/sync", async (req, res) => {
     const mergedGroups = mergeEntitiesByTimestamp(existing.groups, payload.groups, mergedDeletedGroupIds);
     const mergedProjects = mergeEntitiesByTimestamp(existing.projects, payload.projects, mergedDeletedProjectIds);
     const mergedAttendance = mergeEntitiesByTimestamp(existing.attendance, payload.attendance, mergedDeletedAttendanceIds);
+    let mergedRequests = existing.requests || [];
+    if (Array.isArray(payload.requests)) {
+      const reqMap = new Map();
+      (existing.requests || []).forEach((r) => { if (r && r.id) reqMap.set(r.id, r); });
+      payload.requests.forEach((r) => {
+        if (r && r.id) {
+          const cur = reqMap.get(r.id);
+          if (!cur || cur.status === 'pending' || r.status !== 'pending') {
+            reqMap.set(r.id, { ...(cur || {}), ...r });
+          }
+        }
+      });
+      mergedRequests = Array.from(reqMap.values());
+    }
     const merged = {
       ...existing,
       ...payload,
@@ -28360,6 +28398,7 @@ app.post("/api/sync", async (req, res) => {
       groups: mergedGroups,
       projects: mergedProjects,
       attendance: mergedAttendance,
+      requests: mergedRequests,
       deletedProjectIds: mergedDeletedProjectIds,
       deletedGroupIds: mergedDeletedGroupIds,
       deletedAttendanceIds: mergedDeletedAttendanceIds,
@@ -28607,6 +28646,21 @@ app.post("/api/sync", async (req, res) => {
               JSON.stringify(s.blockedIps || [])
             ]);
           } catch {
+          }
+        }
+        if (Array.isArray(mergedRequests)) {
+          for (const r of mergedRequests) {
+            try {
+              await pgPool.query(`
+                INSERT INTO registration_requests (id, first_name, last_name, email, mobile, job_title, requested_at, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (id) DO UPDATE SET
+                  status = EXCLUDED.status,
+                  mobile = COALESCE(EXCLUDED.mobile, registration_requests.mobile),
+                  job_title = COALESCE(EXCLUDED.job_title, registration_requests.job_title);
+              `, [r.id, r.firstName, r.lastName, r.email, r.mobile || null, r.jobTitle || null, r.requestedAt, r.status || "pending"]);
+            } catch {
+            }
           }
         }
       } catch (pgWriteErr) {
@@ -29492,6 +29546,83 @@ app.delete("/api/groups/:id", async (req, res) => {
       });
     }
     return res.json({ success: true, deletedId: id });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+app.post("/api/registration-requests", async (req, res) => {
+  try {
+    const { firstName, lastName, email, mobile, jobTitle, requestedAt, id } = req.body;
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+    const emailLower = email.trim().toLowerCase();
+    let existingFile = {};
+    if (import_fs.default.existsSync(dbFile)) {
+      try {
+        existingFile = JSON.parse(import_fs.default.readFileSync(dbFile, "utf-8"));
+      } catch {
+        existingFile = {};
+      }
+    }
+    const localUsers = Array.isArray(existingFile.users) ? existingFile.users : [];
+    const localRequests = Array.isArray(existingFile.requests) ? existingFile.requests : [];
+    if (localUsers.some((u) => u.email && u.email.toLowerCase() === emailLower) || localRequests.some((r) => r.email && r.email.toLowerCase() === emailLower && r.status === "pending")) {
+      return res.status(400).json({ error: "\u0627\u06CC\u0646 \u0627\u0637\u0644\u0627\u0639\u0627\u062A \u0642\u0628\u0644\u0627\u064B \u062B\u0628\u062A \u0634\u062F\u0647 \u0648 \u062F\u0631 \u0627\u0646\u062A\u0638\u0627\u0631 \u0628\u0631\u0631\u0633\u06CC \u0627\u0633\u062A." });
+    }
+    const reqId = id || `req-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const reqDate = requestedAt || (/* @__PURE__ */ new Date()).toLocaleDateString("fa-IR");
+    const newReq = {
+      id: reqId,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim(),
+      mobile: mobile ? mobile.trim() : void 0,
+      jobTitle: jobTitle ? jobTitle.trim() : void 0,
+      requestedAt: reqDate,
+      status: "pending"
+    };
+    localRequests.unshift(newReq);
+    existingFile.requests = localRequests;
+    import_fs.default.writeFileSync(dbFile, JSON.stringify(existingFile, null, 2), "utf-8");
+    if (pgPool) {
+      await pgPool.query(`
+        INSERT INTO registration_requests (id, first_name, last_name, email, mobile, job_title, requested_at, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status;
+      `, [newReq.id, newReq.firstName, newReq.lastName, newReq.email, newReq.mobile || null, newReq.jobTitle || null, newReq.requestedAt, "pending"]).catch(() => {
+      });
+    }
+    return res.json({ success: true, request: newReq });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+app.patch("/api/registration-requests/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: "Status is required" });
+    let existingFile = {};
+    if (import_fs.default.existsSync(dbFile)) {
+      try {
+        existingFile = JSON.parse(import_fs.default.readFileSync(dbFile, "utf-8"));
+      } catch {
+        existingFile = {};
+      }
+    }
+    if (Array.isArray(existingFile.requests)) {
+      const target = existingFile.requests.find((r) => r.id === id);
+      if (target) {
+        target.status = status;
+        import_fs.default.writeFileSync(dbFile, JSON.stringify(existingFile, null, 2), "utf-8");
+      }
+    }
+    if (pgPool) {
+      await pgPool.query("UPDATE registration_requests SET status = $1 WHERE id = $2", [status, id]).catch(() => {
+      });
+    }
+    return res.json({ success: true, id, status });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
