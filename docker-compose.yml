@@ -76,7 +76,7 @@ services:
     restart: always
     ports:
       - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-8443}:443"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ../clocky-data/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ../clocky-data/certbot/conf:/etc/letsencrypt
