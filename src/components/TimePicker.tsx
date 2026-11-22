@@ -34,6 +34,8 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   isPersian = true
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpwards, setOpenUpwards] = useState(false);
+  const [alignLeft, setAlignLeft] = useState(false);
   const [activeTab, setActiveTab] = useState<'list' | 'custom'>('list');
   const [inputValue, setInputValue] = useState(value || '08:00');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -63,6 +65,51 @@ export const TimePicker: React.FC<TimePickerProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Detect whether to open upwards/downwards and align left/right to avoid clipping in modals & containers
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const scrollParent = dropdownRef.current.closest('.overflow-y-auto') || dropdownRef.current.closest('.overflow-auto');
+      if (scrollParent) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        const spaceInParentBelow = parentRect.bottom - rect.bottom;
+        const spaceInParentAbove = rect.top - parentRect.top;
+        if (spaceInParentBelow < 300 && spaceInParentAbove > 220) {
+          setOpenUpwards(true);
+        } else {
+          setOpenUpwards(false);
+        }
+        if (rect.left - parentRect.left < 140) {
+          setAlignLeft(true);
+        } else {
+          setAlignLeft(false);
+        }
+      } else {
+        if (spaceBelow < 300 && rect.top > 250) {
+          setOpenUpwards(true);
+        } else {
+          setOpenUpwards(false);
+        }
+        if (rect.left < 200) {
+          setAlignLeft(true);
+        } else {
+          setAlignLeft(false);
+        }
+      }
+    }
+  }, [isOpen]);
+
+  // Auto-scroll to selected time in list on open
+  useEffect(() => {
+    if (isOpen && activeTab === 'list' && listContainerRef.current) {
+      const selectedBtn = listContainerRef.current.querySelector('[data-selected="true"]');
+      if (selectedBtn) {
+        (selectedBtn as HTMLElement).scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [isOpen, activeTab]);
 
   // Parse hours and minutes from current value
   const [currentH, currentM] = (value && value.includes(':') ? value : '08:00').split(':');
@@ -155,7 +202,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
   };
 
   return (
-    <div className="relative w-full" ref={dropdownRef}>
+    <div className={`relative w-full ${isOpen ? 'z-50' : 'z-10'}`} ref={dropdownRef}>
       {label && (
         <label className="block text-xs font-semibold text-slate-700 mb-1">
           {label} {required && <span className="text-red-500">*</span>}
@@ -215,7 +262,15 @@ export const TimePicker: React.FC<TimePickerProps> = ({
 
       {/* Dropdown Panel with Quick Presets, Times List, and Hour/Minute Picker */}
       {isOpen && (
-        <div className="absolute z-50 mt-1.5 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 text-slate-800 animate-in fade-in zoom-in-95 duration-100">
+        <div
+          className={`absolute z-50 ${
+            openUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          } ${
+            alignLeft ? 'left-0' : (isPersian ? 'right-0' : 'left-0')
+          } w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl p-3 text-slate-800 animate-in fade-in zoom-in-95 duration-100`}
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           {/* Quick Presets Bar */}
           <div className="flex items-center gap-1.5 pb-2 mb-2 border-b border-slate-100 overflow-x-auto no-scrollbar">
             <button
@@ -274,8 +329,10 @@ export const TimePicker: React.FC<TimePickerProps> = ({
           {activeTab === 'list' && (
             <div
               ref={listContainerRef}
-              className="max-h-52 overflow-y-auto grid grid-cols-3 gap-1.5 p-1 pr-2"
+              className="max-h-48 overflow-y-auto overscroll-contain grid grid-cols-3 gap-1.5 p-1 pr-2"
               dir="ltr"
+              onWheel={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
             >
               {COMMON_TIMES.map((t) => {
                 const isSelected = value === t;
@@ -283,6 +340,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                   <button
                     key={t}
                     type="button"
+                    data-selected={isSelected ? 'true' : undefined}
                     onClick={() => handleSelectTime(t)}
                     className={`py-1.5 px-2 rounded-lg text-xs font-bold font-b-mitra transition-all flex items-center justify-center gap-1 cursor-pointer ${
                       isSelected
@@ -306,7 +364,11 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 <span className="block text-[10px] font-bold text-slate-400 mb-1 text-center font-b-nazanin">
                   {isPersian ? 'ساعت (۰-۲۳)' : 'Hour (0-23)'}
                 </span>
-                <div className="max-h-48 overflow-y-auto space-y-1 p-0.5 border border-slate-100 rounded-xl bg-slate-50/50">
+                <div
+                  className="max-h-44 overflow-y-auto overscroll-contain space-y-1 p-0.5 border border-slate-100 rounded-xl bg-slate-50/50"
+                  onWheel={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
                   {Array.from({ length: 24 }).map((_, i) => {
                     const hStr = String(i).padStart(2, '0');
                     const isSelected = currentH === hStr;
@@ -333,7 +395,11 @@ export const TimePicker: React.FC<TimePickerProps> = ({
                 <span className="block text-[10px] font-bold text-slate-400 mb-1 text-center font-b-nazanin">
                   {isPersian ? 'دقیقه (۵ دقیقه‌ای)' : 'Minute (0-55)'}
                 </span>
-                <div className="max-h-48 overflow-y-auto space-y-1 p-0.5 border border-slate-100 rounded-xl bg-slate-50/50">
+                <div
+                  className="max-h-44 overflow-y-auto overscroll-contain space-y-1 p-0.5 border border-slate-100 rounded-xl bg-slate-50/50"
+                  onWheel={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
                   {Array.from({ length: 12 }).map((_, i) => {
                     const mStr = String(i * 5).padStart(2, '0');
                     const isSelected = currentM === mStr;
