@@ -1812,6 +1812,34 @@ app.post('/api/integrations/ai-flow/notify', async (req, res) => {
       try { dbData = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch {}
     }
 
+    if (pgPool) {
+      try {
+        if (!dbData.attendance || dbData.attendance.length === 0) {
+          const aRes = await pgPool.query('SELECT * FROM attendance_records WHERE user_id = $1 AND (date = $2 OR start_date = $2)', [userId, date]);
+          if (aRes.rows && aRes.rows.length > 0) {
+            dbData.attendance = aRes.rows.map(r => ({
+              id: r.id,
+              userId: r.user_id,
+              date: r.date,
+              startDate: r.start_date,
+              durationMinutes: Number(r.duration_minutes) || 0
+            }));
+          }
+        }
+        if (!dbData.settings?.aiFlowConfig) {
+          const sRes = await pgPool.query('SELECT ai_flow_config FROM system_settings WHERE id = 1').catch(() => ({ rows: [] }));
+          if (sRes.rows?.[0]?.ai_flow_config) {
+            if (!dbData.settings) dbData.settings = {};
+            dbData.settings.aiFlowConfig = typeof sRes.rows[0].ai_flow_config === 'string'
+              ? JSON.parse(sRes.rows[0].ai_flow_config)
+              : sRes.rows[0].ai_flow_config;
+          }
+        }
+      } catch (err: any) {
+        console.warn('pgPool fetch fallback notice in notify:', err?.message);
+      }
+    }
+
     const cfg = dbData.settings?.aiFlowConfig;
     if (!cfg || !cfg.enabled || !cfg.apiUrl || !cfg.apiToken) {
       return res.json({ skipped: true, reason: 'AI Flow integration is not enabled or not fully configured' });
@@ -1889,13 +1917,50 @@ app.post('/api/integrations/ai-flow/sync-batch', async (req, res) => {
       try { dbData = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch {}
     }
 
-    const cfg = dbData.settings?.aiFlowConfig;
-    if (!cfg || !cfg.apiUrl || !cfg.apiToken) {
-      return res.status(400).json({ error: 'AI Flow API URL and Token are required' });
+    if (pgPool) {
+      try {
+        if (!dbData.attendance || dbData.attendance.length === 0) {
+          const aRes = await pgPool.query('SELECT * FROM attendance_records');
+          if (aRes.rows && aRes.rows.length > 0) {
+            dbData.attendance = aRes.rows.map(r => ({
+              id: r.id,
+              userId: r.user_id,
+              date: r.date,
+              startDate: r.start_date,
+              durationMinutes: Number(r.duration_minutes) || 0
+            }));
+          }
+        }
+        if (!dbData.users || dbData.users.length === 0) {
+          const uRes = await pgPool.query('SELECT * FROM users');
+          if (uRes.rows && uRes.rows.length > 0) {
+            dbData.users = uRes.rows.map(r => ({
+              id: r.id,
+              username: r.username,
+              firstName: r.first_name,
+              lastName: r.last_name,
+              role: r.role || 'employee',
+              groupIds: Array.isArray(r.group_ids) ? r.group_ids : []
+            }));
+          }
+        }
+      } catch (err: any) {
+        console.warn('pgPool fetch fallback notice in sync-batch:', err?.message);
+      }
+    }
+
+    const cfg = dbData.settings?.aiFlowConfig || {};
+    const effectiveApiUrl = (req.body.apiUrl || cfg.apiUrl || '').trim();
+    const effectiveApiToken = (req.body.apiToken || cfg.apiToken || '').trim();
+
+    if (!effectiveApiUrl || !effectiveApiToken) {
+      return res.status(400).json({ error: 'آدرس و توکن API الزامی است (ابتدا آن‌ها را وارد و ذخیره فرمایید).' });
     }
 
     const effectiveCfg = {
       ...cfg,
+      apiUrl: effectiveApiUrl,
+      apiToken: effectiveApiToken,
       syncScope: syncScope !== undefined ? syncScope : cfg.syncScope,
       selectedUserIds: selectedUserIds !== undefined ? selectedUserIds : cfg.selectedUserIds,
       selectedGroupIds: selectedGroupIds !== undefined ? selectedGroupIds : cfg.selectedGroupIds
@@ -1935,19 +2000,19 @@ app.post('/api/integrations/ai-flow/sync-batch', async (req, res) => {
     });
 
     if (recordsToSend.length === 0) {
-      return res.json({ ok: true, totalRecords: 0, batches: 0, message: 'هیچ رکوردی در بازه انتخابی یافت نشد.' });
+      return res.json({ ok: true, totalRecords: 0, batches: 0, message: 'هیچ رکوردی برای کاربران مشمول در بازه انتخابی یافت نشد.' });
     }
 
-    const chunkSize = 1000;
+    const chunkSize = 250;
     let totalUpserted = 0;
     const totalBatches = Math.ceil(recordsToSend.length / chunkSize);
 
     for (let i = 0; i < recordsToSend.length; i += chunkSize) {
       const chunk = recordsToSend.slice(i, i + chunkSize);
-      const postRes = await fetch(cfg.apiUrl, {
+      const postRes = await fetch(effectiveApiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${cfg.apiToken}`,
+          'Authorization': `Bearer ${effectiveApiToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ records: chunk })
@@ -1961,10 +2026,12 @@ app.post('/api/integrations/ai-flow/sync-batch', async (req, res) => {
       totalUpserted += (data.upserted || chunk.length);
     }
 
-    cfg.lastSyncAt = new Date().toISOString();
-    cfg.lastStatus = 'success';
-    cfg.lastError = '';
-    cfg.lastUpsertedCount = totalUpserted;
+    if (!dbData.settings) dbData.settings = {};
+    if (!dbData.settings.aiFlowConfig) dbData.settings.aiFlowConfig = {};
+    dbData.settings.aiFlowConfig.lastSyncAt = new Date().toISOString();
+    dbData.settings.aiFlowConfig.lastStatus = 'success';
+    dbData.settings.aiFlowConfig.lastError = '';
+    dbData.settings.aiFlowConfig.lastUpsertedCount = totalUpserted;
     try { fs.writeFileSync(dbFile, JSON.stringify(dbData, null, 2), 'utf-8'); } catch {}
 
     return res.json({

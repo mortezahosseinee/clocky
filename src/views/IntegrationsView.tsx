@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Webhook,
   CheckCircle2,
@@ -25,7 +25,7 @@ import { User, Group, SystemSettings, AiFlowIntegrationConfig } from '../types';
 import { StorageService } from '../utils/storage';
 import { Language } from '../utils/translations';
 import { PersianDatePicker } from '../components/PersianDatePicker';
-import { toPersianDigits, getTodayJalali } from '../utils/jalali';
+import { toPersianDigits, getTodayJalali, getCurrentJalaliParts } from '../utils/jalali';
 
 interface IntegrationsViewProps {
   user: User;
@@ -97,6 +97,26 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
     if (selectedUserIds.includes(userId)) return true;
     return !!getUserInheritedGroup(userId);
   };
+
+  const [attendanceRecords] = useState(() => StorageService.getAttendanceRecords());
+
+  const eligibleRecordsPreview = useMemo(() => {
+    const dayMap = new Map<string, number>();
+    for (const r of attendanceRecords) {
+      if (!isUserIncluded(r.userId)) continue;
+      const d = r.date || r.startDate;
+      if (!d) continue;
+      if (syncStartDate && d < syncStartDate) continue;
+      if (syncEndDate && d > syncEndDate) continue;
+      const key = `${r.userId}_${d}`;
+      dayMap.set(key, (dayMap.get(key) || 0) + (Number(r.durationMinutes) || 0));
+    }
+    const eligibleUsers = users.filter(u => isUserIncluded(u.id));
+    return {
+      totalDays: dayMap.size,
+      eligibleUsersCount: eligibleUsers.length
+    };
+  }, [attendanceRecords, syncScope, selectedUserIds, selectedGroupIds, syncStartDate, syncEndDate, users]);
 
   // Toggle user in specific selection
   const toggleUserSelection = (userId: string) => {
@@ -203,6 +223,14 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
       return;
     }
 
+    if (eligibleRecordsPreview.totalDays === 0) {
+      setSyncResult({
+        ok: false,
+        message: isPersian ? 'هیچ رکوردی برای کاربران مشمول در بازه انتخابی یافت نشد.' : 'No records found for eligible users in this date range.'
+      });
+      return;
+    }
+
     setBatchSyncing(true);
     setSyncResult(null);
 
@@ -211,6 +239,8 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          apiUrl: apiUrl.trim(),
+          apiToken: apiToken.trim(),
           startDate: syncStartDate || undefined,
           endDate: syncEndDate || undefined,
           userKeyMappings,
@@ -803,6 +833,43 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
           </p>
         </div>
 
+        {/* Live Records Preview & Quick Date Shortcuts */}
+        <div className="p-3.5 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-b-nazanin">
+          <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200">
+            <Info className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+            <span>
+              {isPersian
+                ? `پیش‌نمایش ارسال: ${toPersianDigits(eligibleRecordsPreview.totalDays)} روز/کارکرد برای ${toPersianDigits(eligibleRecordsPreview.eligibleUsersCount)} کاربر مشمول (${syncScope === 'all' ? 'همه کاربران' : 'کاربران منتخب'}) در این بازه تاریخی یافت شد.`
+                : `Preview: ${eligibleRecordsPreview.totalDays} daily records found for ${eligibleRecordsPreview.eligibleUsersCount} eligible users in this range.`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+            <span className="text-[11px] text-slate-500 font-bold ml-1">{isPersian ? 'میانبر بازه:' : 'Shortcuts:'}</span>
+            <button
+              type="button"
+              onClick={() => {
+                const parts = getCurrentJalaliParts();
+                setSyncStartDate(`${parts.year}/${String(parts.month).padStart(2, '0')}/01`);
+                setSyncEndDate(getTodayJalali());
+              }}
+              className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 rounded-lg text-[11px] font-bold text-purple-700 dark:text-purple-300 hover:bg-purple-100 transition-colors cursor-pointer"
+            >
+              {isPersian ? 'ماه جاری' : 'This Month'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSyncStartDate('');
+                setSyncEndDate(getTodayJalali());
+              }}
+              className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              {isPersian ? 'همه سوابق' : 'All History'}
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end">
           {/* Start Date */}
           <PersianDatePicker
@@ -824,11 +891,11 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
           <button
             type="button"
             onClick={handleBatchSync}
-            disabled={batchSyncing}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-purple-500/20 transition-all cursor-pointer font-b-nazanin disabled:opacity-50"
+            disabled={batchSyncing || eligibleRecordsPreview.totalDays === 0}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-purple-500/20 transition-all cursor-pointer font-b-nazanin disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className={`w-3.5 h-3.5 ${batchSyncing ? 'animate-pulse' : ''}`} />
-            <span>{batchSyncing ? (isPersian ? 'در حال ارسال بسته‌ها...' : 'Sending batches...') : (isPersian ? 'ارسال سوابق به AI Flow' : 'Send Records to AI Flow')}</span>
+            <span>{batchSyncing ? (isPersian ? 'در حال ارسال بسته‌ها...' : 'Sending batches...') : (isPersian ? `ارسال سوابق به AI Flow (${toPersianDigits(eligibleRecordsPreview.totalDays)} رکورد)` : `Send Records to AI Flow (${eligibleRecordsPreview.totalDays})`)}</span>
           </button>
         </div>
 
