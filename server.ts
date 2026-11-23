@@ -1789,6 +1789,7 @@ function isAiFlowUserIncluded(userId: string, cfg: any, users: any[], groups: an
     if (selectedUsers.includes(userId)) return true;
     if (selectedGroups.length > 0) {
       const user = users.find((u: any) => u.id === userId);
+      if (user && user.role === 'admin') return false;
       if (user && Array.isArray(user.groupIds) && user.groupIds.some((gid: string) => selectedGroups.includes(gid))) {
         return true;
       }

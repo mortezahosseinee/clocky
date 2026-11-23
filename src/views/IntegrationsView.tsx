@@ -82,6 +82,7 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
   const getUserInheritedGroup = (userId: string): Group | undefined => {
     if (selectedGroupIds.length === 0) return undefined;
     const targetUser = users.find(u => u.id === userId);
+    if (targetUser && targetUser.role === 'admin') return undefined; // Admin does not belong to groups
     return groups.find(g => {
       if (!selectedGroupIds.includes(g.id)) return false;
       if (Array.isArray(g.memberUserIds) && g.memberUserIds.includes(userId)) return true;
@@ -528,7 +529,12 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                   {groups.map(g => {
                     const isChecked = selectedGroupIds.includes(g.id);
-                    const memberCount = Array.isArray(g.memberUserIds) ? g.memberUserIds.length : 0;
+                    const memberCount = Array.isArray(g.memberUserIds)
+                      ? g.memberUserIds.filter(id => {
+                          const u = users.find(x => x.id === id);
+                          return u && u.role !== 'admin';
+                        }).length
+                      : 0;
                     return (
                       <div
                         key={g.id}

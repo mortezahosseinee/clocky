@@ -26,7 +26,8 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ user, lang }) => {
   const isPersian = lang === 'fa';
 
   const [groups, setGroups] = useState<Group[]>(() => StorageService.getGroups());
-  const allUsers = StorageService.getUsers(false);
+  // The system admin always has full access and does not belong to individual groups
+  const allUsers = StorageService.getUsers(false).filter(u => u.role !== 'admin');
   const allProjects = StorageService.getProjects();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,7 +92,11 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ user, lang }) => {
     setEditingGroup(g);
     setName(g.name);
     setDescription(g.description || '');
-    setMemberUserIds(g.memberUserIds || []);
+    const cleanMembers = (g.memberUserIds || []).filter(id => {
+      const u = StorageService.getUserById(id);
+      return u && u.role !== 'admin';
+    });
+    setMemberUserIds(cleanMembers);
     setFormError(null);
     setIsModalOpen(true);
   };
@@ -103,23 +108,35 @@ export const GroupsView: React.FC<GroupsViewProps> = ({ user, lang }) => {
       return;
     }
 
+    const cleanMembers = memberUserIds.filter(id => {
+      const u = StorageService.getUserById(id);
+      return u && u.role !== 'admin';
+    });
+
     const grp: Group = {
       id: editingGroup ? editingGroup.id : `grp-${Date.now()}`,
       name: name.trim(),
       description: description.trim() || undefined,
-      memberUserIds,
+      memberUserIds: cleanMembers,
       createdAt: editingGroup ? editingGroup.createdAt : getTodayJalali()
     };
 
     StorageService.saveGroup(grp);
 
-    // Sync user records with this group
+    // Sync user records with this group (admin never has groups)
     const users = StorageService.getUsers(true);
     users.forEach(u => {
-      const isMember = memberUserIds.includes(u.id);
-      const currentlyHas = u.groupIds.includes(grp.id);
+      if (u.role === 'admin') {
+        if (Array.isArray(u.groupIds) && u.groupIds.length > 0) {
+          u.groupIds = [];
+          StorageService.saveUser(u);
+        }
+        return;
+      }
+      const isMember = cleanMembers.includes(u.id);
+      const currentlyHas = Array.isArray(u.groupIds) && u.groupIds.includes(grp.id);
       if (isMember && !currentlyHas) {
-        u.groupIds.push(grp.id);
+        u.groupIds = [...(u.groupIds || []), grp.id];
         StorageService.saveUser(u);
       } else if (!isMember && currentlyHas) {
         u.groupIds = u.groupIds.filter(id => id !== grp.id);

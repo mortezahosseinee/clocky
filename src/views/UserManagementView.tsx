@@ -362,7 +362,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
         mobile: mobile.trim() || undefined,
         jobTitle: jobTitle.trim() || undefined,
         role,
-        groupIds,
+        groupIds: role === 'admin' ? [] : groupIds,
         isActive,
         isArchived: false,
         createdAt: registrationDate,
@@ -398,7 +398,7 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
         mobile: mobile.trim() || undefined,
         jobTitle: jobTitle.trim() || undefined,
         role,
-        groupIds,
+        groupIds: role === 'admin' ? [] : groupIds,
         isActive,
         isArchived: false,
         mustChangePassword: true,
@@ -883,11 +883,20 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
                       </td>
                       <td className="p-3">
                         <div className="flex flex-wrap gap-1">
-                          {userGroupNames.map((gn, gIdx) => (
-                            <span key={gIdx} className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold">
-                              {gn}
+                          {u.role === 'admin' ? (
+                            <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-[10px] font-bold border border-purple-200/60">
+                              {isPersian ? 'دسترسی سراسری (مدیر ارشد)' : 'All Access (Super Admin)'}
                             </span>
-                          ))}
+                          ) : (
+                            userGroupNames.map((gn, gIdx) => (
+                              <span key={gIdx} className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold">
+                                {gn}
+                              </span>
+                            ))
+                          )}
+                          {u.role !== 'admin' && userGroupNames.length === 0 && (
+                            <span className="text-slate-400 text-[10px] font-b-nazanin">—</span>
+                          )}
                         </div>
                       </td>
                       <td className="p-3">
@@ -1248,32 +1257,43 @@ Valid for ${settings.tempPasswordExpiryMinutes} minutes.`;
               </div>
 
               {/* Group assignment */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {t.groupsCol}
-                </label>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg max-h-32 overflow-y-auto space-y-1.5">
-                  {allGroups.map(g => (
-                    <label key={g.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={groupIds.includes(g.id)}
-                        onChange={e => {
-                          if (e.target.checked) setGroupIds([...groupIds, g.id]);
-                          else setGroupIds(groupIds.filter(id => id !== g.id));
-                        }}
-                        className="rounded text-blue-600"
-                      />
-                      <span className="font-semibold text-slate-800">{g.name}</span>
-                    </label>
-                  ))}
-                  {allGroups.length === 0 && (
-                    <span className="text-xs text-slate-400 font-b-nazanin">
-                      {isPersian ? 'گروهی تعریف نشده است.' : 'No groups defined yet.'}
-                    </span>
-                  )}
+              {role === 'admin' ? (
+                <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl text-xs text-purple-900 font-b-nazanin flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span>
+                    {isPersian
+                      ? 'مدیر ارشد سامانه به صورت خودکار به تمام پروژه‌ها، گروه‌ها و داده‌ها دسترسی کامل دارد و در هیچ گروه خاصی عضو نمی‌شود.'
+                      : 'System Administrator automatically has full access to all projects, groups, and records and does not belong to individual groups.'}
+                  </span>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t.groupsCol}
+                  </label>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg max-h-32 overflow-y-auto space-y-1.5">
+                    {allGroups.map(g => (
+                      <label key={g.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={groupIds.includes(g.id)}
+                          onChange={e => {
+                            if (e.target.checked) setGroupIds([...groupIds, g.id]);
+                            else setGroupIds(groupIds.filter(id => id !== g.id));
+                          }}
+                          className="rounded text-blue-600"
+                        />
+                        <span className="font-semibold text-slate-800">{g.name}</span>
+                      </label>
+                    ))}
+                    {allGroups.length === 0 && (
+                      <span className="text-xs text-slate-400 font-b-nazanin">
+                        {isPersian ? 'گروهی تعریف نشده است.' : 'No groups defined yet.'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Password field ONLY shown when creating a NEW user (removed from Edit User modal per user request) */}
               {!editingUser && (

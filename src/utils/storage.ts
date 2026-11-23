@@ -613,7 +613,14 @@ export const StorageService = {
     if (!raw) return [];
     try {
       const users: User[] = JSON.parse(raw);
-      return includeArchived ? users : users.filter(u => !u.isArchived);
+      // Ensure admin users never have groupIds
+      const sanitized = users.map(u => {
+        if (u.role === 'admin' && Array.isArray(u.groupIds) && u.groupIds.length > 0) {
+          return { ...u, groupIds: [] };
+        }
+        return u;
+      });
+      return includeArchived ? sanitized : sanitized.filter(u => !u.isArchived);
     } catch {
       return [];
     }
@@ -640,6 +647,9 @@ export const StorageService = {
   },
 
   saveUser(user: User, options?: { preservePassword?: boolean }) {
+    if (user.role === 'admin') {
+      user.groupIds = [];
+    }
     const users = this.getUsers(true);
     const idx = users.findIndex(u => u.id === user.id);
     const nowIso = new Date().toISOString();
@@ -897,12 +907,38 @@ export const StorageService = {
   getGroups(): Group[] {
     const raw = localStorage.getItem(STORAGE_KEYS.GROUPS);
     if (!raw) return [];
-    try { return JSON.parse(raw); } catch { return []; }
+    try {
+      const groups: Group[] = JSON.parse(raw);
+      const adminUsers = this.getUsers(true).filter(u => u.role === 'admin');
+      const adminIds = new Set(adminUsers.map(u => u.id));
+      let changed = false;
+      const cleanGroups = groups.map(g => {
+        if (!Array.isArray(g.memberUserIds)) return { ...g, memberUserIds: [] };
+        const filtered = g.memberUserIds.filter(id => !adminIds.has(id));
+        if (filtered.length !== g.memberUserIds.length) {
+          changed = true;
+          return { ...g, memberUserIds: filtered };
+        }
+        return g;
+      });
+      if (changed && typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(cleanGroups));
+      }
+      return cleanGroups;
+    } catch { return []; }
   },
 
   saveGroup(group: Group) {
+    const adminIds = new Set(this.getUsers(true).filter(u => u.role === 'admin').map(u => u.id));
+    const cleanMembers = Array.isArray(group.memberUserIds)
+      ? group.memberUserIds.filter(id => !adminIds.has(id))
+      : [];
     const groups = this.getGroups();
-    const stampedGroup: Group = { ...group, updatedAt: new Date().toISOString() };
+    const stampedGroup: Group = {
+      ...group,
+      memberUserIds: cleanMembers,
+      updatedAt: new Date().toISOString()
+    };
     const idx = groups.findIndex(g => g.id === group.id);
     if (idx >= 0) {
       groups[idx] = stampedGroup;

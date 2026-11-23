@@ -436,15 +436,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ user, lang, onUserUpda
             {isPersian ? 'گروه‌های سازمانی عضویت:' : 'Assigned Groups:'}
           </span>
           <div className="flex flex-wrap gap-1">
-            {assignedGroupNames.map((gn, idx) => (
-              <span key={idx} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold">
-                {gn}
+            {currentUserData.role === 'admin' ? (
+              <span className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 text-xs font-bold border border-purple-200/60 font-b-nazanin">
+                {isPersian ? 'دسترسی سراسری مدیر ارشد' : 'Super Admin Full Access'}
               </span>
-            ))}
-            {assignedGroupNames.length === 0 && (
-              <span className="text-xs text-slate-400 font-b-nazanin">
-                {isPersian ? 'عضو هیچ گروهی نیست' : 'No groups'}
-              </span>
+            ) : (
+              <>
+                {assignedGroupNames.map((gn, idx) => (
+                  <span key={idx} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold">
+                    {gn}
+                  </span>
+                ))}
+                {assignedGroupNames.length === 0 && (
+                  <span className="text-xs text-slate-400 font-b-nazanin">
+                    {isPersian ? 'عضو هیچ گروهی نیست' : 'No groups'}
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
