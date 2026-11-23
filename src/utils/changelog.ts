@@ -1,8 +1,54 @@
 import { ChangelogItem } from "../types";
 
-export const APP_CURRENT_VERSION = "v2.0.18";
+export const APP_CURRENT_VERSION = "v2.0.20";
 
 export const CHANGELOG: ChangelogItem[] = [
+  {
+    version: "v2.0.20",
+    releaseDate: "2026-11-23",
+    releaseDateFa: "۱۴۰۵/۰۹/۰۲",
+    titleFa:
+      "یکپارچه‌سازی وب‌هوک با سامانه AI Flow، مدیریت دقیق محدوده همگام‌سازی و اعمال دسترسی سراسری مدیر ارشد",
+    titleEn:
+      "AI Flow Webhook Integration, Granular Sync Scoping & Super Admin Global Access Enforcement",
+    changesFa: [
+      "پیاده‌سازی یکپارچه‌سازی کامل با سامانه AI Flow جهت ارسال خودکار و بلادرنگ ساعات کارکرد پرسنل به همراه توکن Bearer",
+      "طراحی جدول نگاشت پرسنل به کلید کاربری جیرا (Jira userKey) با قابلیت تکمیل خودکار و ویرایش دستی",
+      "افزودن قابلیت تفکیک محدوده همگام‌سازی (Sync Scope) به دو حالت سراسری (همه پرسنل) و اختصاصی (فقط کاربران و گروه‌های منتخب)",
+      "پیاده‌سازی بخش ارسال دسته‌ای سوابق گذشته (Historical Batch Sync) به همراه پیش‌نمایش زنده تعداد رکوردها و میانبرهای زمانی ماه جاری و همه سوابق",
+      "بهینه‌سازی سایز بسته‌های ارسالی به دسته‌های امن ۲۵۰ تایی و رفع خطای ReferenceError (fs is not defined) در تمام اندپوینت‌های سرور",
+      "جداسازی کامل مدیر کل سامانه (Super Admin) از عضویت در گروه‌ها و کارت‌های گروهی همزمان با حفظ دسترسی سراسری ۱۰۰٪ به تمامی بخش‌ها و پروژه‌ها",
+      "تنظیم و تثبیت پورت اتصال سرویس Nginx و وب‌سرور روی پورت امن ۸۴۴۳",
+    ],
+    changesEn: [
+      "Implemented full integration with AI Flow for automated real-time dispatch of presence hours using Bearer token authentication",
+      "Added employee to Jira userKey mapping table with smart auto-fill and manual customization capabilities",
+      "Introduced granular sync scoping allowing either global synchronization or restricted individual user and group selection",
+      "Built historical batch sync subsystem featuring live eligible records preview and quick date shortcuts (current month / all history)",
+      "Optimized batch transmission into 250-record chunks and resolved server ReferenceError (fs is not defined) across all integration endpoints",
+      "Completely excluded system super admin from group memberships and group cards while guaranteeing universal unrestricted access across all projects",
+      "Configured and stabilized Nginx reverse proxy on secure HTTPS port 8443",
+    ],
+  },
+  {
+    version: "v2.0.19",
+    releaseDate: "2026-10-28",
+    releaseDateFa: "۱۴۰۵/۰۸/۰۶",
+    titleFa:
+      "باز شدن هوشمند منوی ساعت به سمت بالا در مودال‌ها و ارتقای فیلد ساعت ثبت زنده به انتخابگر کامل",
+    titleEn:
+      "Smart Upward Positioning of Time/Date Pickers in Modals & Unified Picker in Live Work Tracker",
+    changesFa: [
+      "تشخیص هوشمند فضای باقیمانده در مودال‌ها و باز شدن منوی ساعت/تاریخ به سمت بالا (Upward) برای جلوگیری از بریده شدن یا رفتن زیر مودال",
+      "جایگزینی فیلد زمان در کارت «ثبت کارکرد زنده» با انتخابگر کامل ساعت جهت امکان تایپ آزاد و استفاده از لیست بازشونده",
+      "افزایش اولویت لایه (z-index) منوهای بازشونده برای قرارگیری بالاتر از تمام عناصر مجاور فرم",
+    ],
+    changesEn: [
+      "Smart positioning detection to open time/date dropdowns upwards when bottom space in modals is limited",
+      "Upgraded live work tracker card to use full TimePicker and PersianDatePicker components with direct typing",
+      "Elevated dropdown z-index to ensure visibility above all adjacent modal elements",
+    ],
+  },
   {
     version: "v2.0.18",
     releaseDate: "2026-10-28",
