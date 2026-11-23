@@ -544,11 +544,15 @@ var YC=({user:e,lang:t})=>{
   let n=be[t],r=t===`fa`,i=e.role===`admin`,
   [settings,setSettings]=(0,_.useState)(()=>F.getSettings()),
   [users,setUsers]=(0,_.useState)(()=>F.getUsers()),
-  initCfg=settings.aiFlowConfig||{enabled:!1,apiUrl:`http://127.0.0.1:6060/api/workhours`,apiToken:``,userKeyMappings:{}},
+  [groups,setGroups]=(0,_.useState)(()=>F.getGroups()),
+  initCfg=settings.aiFlowConfig||{enabled:!1,apiUrl:`http://127.0.0.1:6060/api/workhours`,apiToken:``,userKeyMappings:{},syncScope:`all`,selectedUserIds:[],selectedGroupIds:[]},
   [enabled,setEnabled]=(0,_.useState)(initCfg.enabled||!1),
   [apiUrl,setApiUrl]=(0,_.useState)(initCfg.apiUrl||``),
   [apiToken,setApiToken]=(0,_.useState)(initCfg.apiToken||``),
   [showToken,setShowToken]=(0,_.useState)(!1),
+  [syncScope,setSyncScope]=(0,_.useState)(initCfg.syncScope||`all`),
+  [selectedUserIds,setSelectedUserIds]=(0,_.useState)(()=>initCfg.selectedUserIds||[]),
+  [selectedGroupIds,setSelectedGroupIds]=(0,_.useState)(()=>initCfg.selectedGroupIds||[]),
   [userKeyMappings,setUserKeyMappings]=(0,_.useState)(()=>initCfg.userKeyMappings||{}),
   [saveSuccess,setSaveSuccess]=(0,_.useState)(!1),
   [testing,setTesting]=(0,_.useState)(!1),
@@ -557,10 +561,37 @@ var YC=({user:e,lang:t})=>{
   [syncStart,setSyncStart]=(0,_.useState)(``),
   [syncEnd,setSyncEnd]=(0,_.useState)(()=>w()),
   [syncResult,setSyncResult]=(0,_.useState)(null),
-  [search,setSearch]=(0,_.useState)(``);
+  [search,setSearch]=(0,_.useState)(``),
+  [scopeUserSearch,setScopeUserSearch]=(0,_.useState)(``),
+  [onlyShowIncluded,setOnlyShowIncluded]=(0,_.useState)(!1);
+
+  let getUserInheritedGroup=(uid)=>{
+    if(!selectedGroupIds.length)return void 0;
+    let u=users.find(x=>x.id===uid);
+    return groups.find(g=>{
+      if(!selectedGroupIds.includes(g.id))return!1;
+      if(Array.isArray(g.memberUserIds)&&g.memberUserIds.includes(uid))return!0;
+      if(u&&Array.isArray(u.groupIds)&&u.groupIds.includes(g.id))return!0;
+      return!1
+    })
+  };
+
+  let isUserIncluded=(uid)=>{
+    if(syncScope===`all`)return!0;
+    if(selectedUserIds.includes(uid))return!0;
+    return!!getUserInheritedGroup(uid)
+  };
+
+  let toggleUserSelection=(uid)=>{
+    setSelectedUserIds(prev=>prev.includes(uid)?prev.filter(x=>x!==uid):[...prev,uid])
+  };
+
+  let toggleGroupSelection=(gid)=>{
+    setSelectedGroupIds(prev=>prev.includes(gid)?prev.filter(x=>x!==gid):[...prev,gid])
+  };
 
   let handleSave=async()=>{
-    let updatedCfg={...settings.aiFlowConfig,enabled,apiUrl:apiUrl.trim(),apiToken:apiToken.trim(),userKeyMappings};
+    let updatedCfg={...settings.aiFlowConfig,enabled,apiUrl:apiUrl.trim(),apiToken:apiToken.trim(),syncScope,selectedUserIds,selectedGroupIds,userKeyMappings};
     let updatedSettings={...settings,aiFlowConfig:updatedCfg};
     F.saveSettings(updatedSettings);
     setSettings(updatedSettings);
@@ -585,7 +616,7 @@ var YC=({user:e,lang:t})=>{
     if(!apiUrl.trim()||!apiToken.trim()){setSyncResult({ok:!1,message:r?`لطفاً ابتدا آدرس API و توکن را تکمیل و ذخیره نمایید.`:`Please configure API URL and token first.`});return}
     setBatchSyncing(!0);setSyncResult(null);
     try{
-      let res=await fetch(`/api/integrations/ai-flow/sync-batch`,{method:`POST`,headers:{"Content-Type":"application/json"},body:JSON.stringify({startDate:syncStart||void 0,endDate:syncEnd||void 0,userKeyMappings})});
+      let res=await fetch(`/api/integrations/ai-flow/sync-batch`,{method:`POST`,headers:{"Content-Type":"application/json"},body:JSON.stringify({startDate:syncStart||void 0,endDate:syncEnd||void 0,userKeyMappings,syncScope,selectedUserIds,selectedGroupIds})});
       let data=await res.json();
       if(res.ok&&data.ok){
         setSyncResult({ok:!0,message:r?`ارسال موفقیت‌آمیز بود! تعداد `+A(data.totalRecords||0)+` رکورد در قالب `+A(data.batches||1)+` بسته به AI Flow ارسال گردید.`:`Sync succeeded! Sent `+(data.totalRecords||0)+` records across `+(data.batches||1)+` batch(es) to AI Flow.`})
@@ -603,6 +634,7 @@ var YC=({user:e,lang:t})=>{
   };
 
   let filteredUsers=users.filter(u=>{
+    if(onlyShowIncluded&&!isUserIncluded(u.id))return!1;
     if(!search)return!0;
     let term=search.toLowerCase(),name=`${u.firstName} ${u.lastName}`.toLowerCase(),un=(u.username||``).toLowerCase(),k=(userKeyMappings[u.id]||``).toLowerCase();
     return name.includes(term)||un.includes(term)||k.includes(term)
@@ -666,6 +698,86 @@ var YC=({user:e,lang:t})=>{
       ]},void 0,!0)
     ]},void 0,!0),
 
+    (0,L.jsxDEV)(`div`,{className:`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-6`,children:[
+      (0,L.jsxDEV)(`div`,{className:`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800`,children:[
+        (0,L.jsxDEV)(`div`,{className:`space-y-1`,children:[
+          (0,L.jsxDEV)(`h3`,{className:`text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2`,children:[(0,L.jsxDEV)(on,{className:`w-4 h-4 text-purple-600 dark:text-purple-400`},void 0,!1),r?`محدوده ارسال داده‌ها (پرسنل و گروه‌ها)`:`Data Sync Scope (Users & Groups)`]},void 0,!0),
+          (0,L.jsxDEV)(`p`,{className:`text-xs text-slate-500 dark:text-slate-400 font-b-nazanin`,children:r?`تعیین کنید اطلاعات کارکرد کدام پرسنل یا کدام گروه‌های کاری به سامانه AI Flow ارسال گردد.`:`Specify which users or groups will have their workhours pushed to AI Flow.`},void 0,!1)
+        ]},void 0,!0),
+        (0,L.jsxDEV)(`div`,{className:`inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl shrink-0`,children:[
+          (0,L.jsxDEV)(`button`,{type:`button`,onClick:()=>setSyncScope(`all`),className:`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer font-b-nazanin `+(syncScope===`all`?`bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs`:`text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200`),children:r?`همه پرسنل (بدون فیلتر)`:`All Personnel`},void 0,!1),
+          (0,L.jsxDEV)(`button`,{type:`button`,onClick:()=>setSyncScope(`specific`),className:`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer font-b-nazanin `+(syncScope===`specific`?`bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs`:`text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200`),children:r?`پرسنل و گروه‌های منتخب`:`Selected Users & Groups`},void 0,!1)
+        ]},void 0,!0)
+      ]},void 0,!0),
+
+      syncScope===`all`?(0,L.jsxDEV)(`div`,{className:`p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 font-b-nazanin flex items-center justify-between`,children:[
+        (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2`,children:[(0,L.jsxDEV)(Ge,{className:`w-4 h-4 text-emerald-500 shrink-0`},void 0,!1),r?`حالت سراسری فعال است: کارکرد تمام `+A(users.length)+` کاربر سامانه به AI Flow ارسال خواهد شد.`:`Global scope active: all `+users.length+` users will be synced to AI Flow.`]},void 0,!0),
+        (0,L.jsxDEV)(`span`,{className:`text-[11px] px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold rounded-lg font-b-mitra`,children:r?`ارسال کامل`:`Full Sync`},void 0,!1)
+      ]},void 0,!0):(0,L.jsxDEV)(`div`,{className:`space-y-6 animate-in fade-in duration-150`,children:[
+        (0,L.jsxDEV)(`div`,{className:`space-y-3`,children:[
+          (0,L.jsxDEV)(`div`,{className:`flex items-center justify-between`,children:[
+            (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2`,children:[
+              (0,L.jsxDEV)(ft,{className:`w-4 h-4 text-indigo-500`},void 0,!1),
+              (0,L.jsxDEV)(`span`,{className:`text-xs font-bold text-slate-800 dark:text-slate-200 font-b-nazanin`,children:r?`۱. گروه‌های کاری منتخب:`:`1. Selected Groups:`},void 0,!1),
+              (0,L.jsxDEV)(`span`,{className:`text-[11px] text-slate-400 font-b-mitra`,children:`(`+(r?A(selectedGroupIds.length)+` گروه انتخاب شده`:selectedGroupIds.length+` groups selected`)+`)`},void 0,!1)
+            ]},void 0,!0),
+            (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2 text-xs`,children:[
+              (0,L.jsxDEV)(`button`,{type:`button`,onClick:()=>setSelectedGroupIds(groups.map(g=>g.id)),className:`text-indigo-600 hover:underline dark:text-indigo-400 cursor-pointer font-b-nazanin text-[11px] font-bold`,children:r?`انتخاب همه گروه‌ها`:`Select All`},void 0,!1),
+              (0,L.jsxDEV)(`span`,{className:`text-slate-300 dark:text-slate-600`,children:`|`},void 0,!1),
+              (0,L.jsxDEV)(`button`,{type:`button`,onClick:()=>setSelectedGroupIds([]),className:`text-slate-500 hover:underline cursor-pointer font-b-nazanin text-[11px]`,children:r?`لغو انتخاب`:`Clear`},void 0,!1)
+            ]},void 0,!0)
+          ]},void 0,!0),
+          groups.length===0?(0,L.jsxDEV)(`div`,{className:`p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-slate-400 text-xs text-center font-b-nazanin`,children:r?`هیچ گروهی در سیستم تعریف نشده است.`:`No groups defined.`},void 0,!1):(0,L.jsxDEV)(`div`,{className:`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5`,children:groups.map(g=>{
+            let isChecked=selectedGroupIds.includes(g.id),memberCount=Array.isArray(g.memberUserIds)?g.memberUserIds.length:0;
+            return (0,L.jsxDEV)(`div`,{onClick:()=>toggleGroupSelection(g.id),className:`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 select-none `+(isChecked?`bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-950 dark:text-indigo-200 shadow-2xs`:`bg-slate-50/60 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300`),children:[
+              (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2.5 min-w-0`,children:[
+                isChecked?(0,L.jsxDEV)(ze,{className:`w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0`},void 0,!1):(0,L.jsxDEV)(qt,{className:`w-4 h-4 text-slate-400 shrink-0`},void 0,!1),
+                (0,L.jsxDEV)(`div`,{className:`min-w-0`,children:[
+                  (0,L.jsxDEV)(`span`,{className:`text-xs font-bold block truncate font-b-nazanin`,children:g.name},void 0,!1),
+                  g.description&&(0,L.jsxDEV)(`span`,{className:`text-[10px] text-slate-400 block truncate`,children:g.description},void 0,!1)
+                ]},void 0,!0)
+              ]},void 0,!0),
+              (0,L.jsxDEV)(`span`,{className:`text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 font-bold shrink-0 font-b-mitra`,children:r?A(memberCount)+` کاربر`:memberCount+` users`},void 0,!1)
+            ]},g.id,!1)
+          })},void 0,!1)
+        ]},void 0,!0),
+
+        (0,L.jsxDEV)(`div`,{className:`space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800`,children:[
+          (0,L.jsxDEV)(`div`,{className:`flex flex-col sm:flex-row sm:items-center justify-between gap-2`,children:[
+            (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2`,children:[
+              (0,L.jsxDEV)(nn,{className:`w-4 h-4 text-blue-500`},void 0,!1),
+              (0,L.jsxDEV)(`span`,{className:`text-xs font-bold text-slate-800 dark:text-slate-200 font-b-nazanin`,children:r?`۲. کاربران اختصاصی منتخب:`:`2. Individual Selected Users:`},void 0,!1),
+              (0,L.jsxDEV)(`span`,{className:`text-[11px] text-slate-400 font-b-mitra`,children:`(`+(r?A(selectedUserIds.length)+` کاربر مستقیم`:selectedUserIds.length+` direct users`)+`)`},void 0,!1)
+            ]},void 0,!0),
+            (0,L.jsxDEV)(`div`,{className:`relative w-full sm:w-64`,children:[
+              (0,L.jsxDEV)(It,{className:`w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5`},void 0,!1),
+              (0,L.jsxDEV)(`input`,{type:`text`,value:scopeUserSearch,onChange:e=>setScopeUserSearch(e.target.value),placeholder:r?`جستجو در پرسنل...`:`Search users...`,className:`w-full pr-8 pl-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-b-nazanin`},void 0,!1)
+            ]},void 0,!0)
+          ]},void 0,!0),
+
+          (0,L.jsxDEV)(`div`,{className:`max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2`,children:users.filter(u=>{
+            if(!scopeUserSearch)return!0;
+            let q=scopeUserSearch.toLowerCase();
+            return`${u.firstName} ${u.lastName}`.toLowerCase().includes(q)||u.username.toLowerCase().includes(q)
+          }).map(u=>{
+            let inheritedGroup=getUserInheritedGroup(u.id),isDirectlyChecked=selectedUserIds.includes(u.id),isCovered=isDirectlyChecked||!!inheritedGroup;
+            return (0,L.jsxDEV)(`div`,{onClick:()=>{if(inheritedGroup)return;toggleUserSelection(u.id)},className:`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 select-none `+(inheritedGroup?`bg-purple-50/60 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 text-purple-950 dark:text-purple-200 cursor-default`:isDirectlyChecked?`bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 text-blue-950 dark:text-blue-200 cursor-pointer shadow-2xs`:`bg-slate-50/40 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 cursor-pointer`),children:[
+              (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2 min-w-0`,children:[
+                isCovered?(0,L.jsxDEV)(ze,{className:`w-4 h-4 shrink-0 `+(inheritedGroup?`text-purple-500`:`text-blue-600`)},void 0,!1):(0,L.jsxDEV)(qt,{className:`w-4 h-4 text-slate-400 shrink-0`},void 0,!1),
+                (0,L.jsxDEV)(`div`,{className:`min-w-0`,children:[
+                  (0,L.jsxDEV)(`span`,{className:`text-xs font-bold block truncate font-b-nazanin`,children:`${u.firstName} ${u.lastName}`},void 0,!1),
+                  (0,L.jsxDEV)(`span`,{className:`text-[10px] text-slate-400 font-mono block truncate`,dir:`ltr`,children:u.username},void 0,!1)
+                ]},void 0,!0)
+              ]},void 0,!0),
+              inheritedGroup?(0,L.jsxDEV)(`span`,{className:`text-[9px] px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold shrink-0 font-b-nazanin`,title:`عضو گروه `+inheritedGroup.name,children:inheritedGroup.name},void 0,!1):isDirectlyChecked?(0,L.jsxDEV)(`span`,{className:`text-[9px] px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold shrink-0 font-b-nazanin`,children:r?`مستقیم`:`Direct`},void 0,!1):null
+            ]},u.id,!1)
+          })},void 0,!1),
+
+          (0,L.jsxDEV)(`div`,{className:`flex items-center justify-between text-xs font-b-nazanin pt-2 text-slate-500 dark:text-slate-400`,children:(0,L.jsxDEV)(`span`,{children:r?`مجموعاً `+A(users.filter(u=>isUserIncluded(u.id)).length)+` کاربر از کل `+A(users.length)+` کاربر مشمول ارسال به AI Flow هستند.`:`Total `+users.filter(u=>isUserIncluded(u.id)).length+` of `+users.length+` users will be synced to AI Flow.`},void 0,!1)},void 0,!1)
+        ]},void 0,!0)
+      ]},void 0,!1)
+    ]},void 0,!0),
+
     (0,L.jsxDEV)(`div`,{className:`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-4`,children:[
       (0,L.jsxDEV)(`div`,{className:`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800`,children:[
         (0,L.jsxDEV)(`div`,{className:`space-y-1`,children:[
@@ -675,22 +787,27 @@ var YC=({user:e,lang:t})=>{
         (0,L.jsxDEV)(`button`,{type:`button`,onClick:handleAutoFill,className:`flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-xl transition-colors cursor-pointer font-b-nazanin shrink-0`,children:[(0,L.jsxDEV)(Gt,{className:`w-3.5 h-3.5 text-amber-500`},void 0,!1),r?`تکمیل خودکار با نام کاربری`:`Auto-fill with Username`]},void 0,!0)
       ]},void 0,!0),
 
-      (0,L.jsxDEV)(`div`,{className:`flex items-center gap-2 max-w-sm`,children:(0,L.jsxDEV)(`div`,{className:`relative w-full`,children:[(0,L.jsxDEV)(It,{className:`w-3.5 h-3.5 text-slate-400 absolute right-3 top-3`},void 0,!1),(0,L.jsxDEV)(`input`,{type:`text`,value:search,onChange:e=>setSearch(e.target.value),placeholder:r?`جستجو در نام، نام کاربری یا کلید جیرا...`:`Search employees...`,className:`w-full pr-8 pl-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-b-nazanin`},void 0,!1)]},void 0,!0)},void 0,!1),
+      (0,L.jsxDEV)(`div`,{className:`flex flex-col sm:flex-row sm:items-center justify-between gap-3`,children:[
+        (0,L.jsxDEV)(`div`,{className:`relative w-full sm:w-72`,children:[(0,L.jsxDEV)(It,{className:`w-3.5 h-3.5 text-slate-400 absolute right-3 top-3`},void 0,!1),(0,L.jsxDEV)(`input`,{type:`text`,value:search,onChange:e=>setSearch(e.target.value),placeholder:r?`جستجو در نام، نام کاربری یا کلید جیرا...`:`Search employees...`,className:`w-full pr-8 pl-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-b-nazanin`},void 0,!1)]},void 0,!0),
+        (0,L.jsxDEV)(`button`,{type:`button`,onClick:()=>setOnlyShowIncluded(!onlyShowIncluded),className:`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer font-b-nazanin shrink-0 `+(onlyShowIncluded?`bg-purple-50 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300`:`bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900`),children:[(0,L.jsxDEV)(ft,{className:`w-3.5 h-3.5`},void 0,!1),r?`فقط نمایش پرسنل مشمول ارسال`:`Only Eligible Users`]},void 0,!0)
+      ]},void 0,!0),
 
       (0,L.jsxDEV)(`div`,{className:`overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-2xl`,children:(0,L.jsxDEV)(`table`,{className:`w-full text-right border-collapse text-xs`,children:[
         (0,L.jsxDEV)(`thead`,{children:(0,L.jsxDEV)(`tr`,{className:`bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-bold font-b-nazanin`,children:[
           (0,L.jsxDEV)(`th`,{className:`p-3 w-12 text-center`,children:`#`},void 0,!1),
           (0,L.jsxDEV)(`th`,{className:`p-3`,children:r?`نام و نام خانوادگی`:`Full Name`},void 0,!1),
           (0,L.jsxDEV)(`th`,{className:`p-3`,children:r?`نام کاربری در سامانه`:`Clocky Username`},void 0,!1),
+          (0,L.jsxDEV)(`th`,{className:`p-3`,children:r?`وضعیت ارسال`:`Sync Status`},void 0,!1),
           (0,L.jsxDEV)(`th`,{className:`p-3`,children:r?`عنوان شغلی`:`Job Title`},void 0,!1),
           (0,L.jsxDEV)(`th`,{className:`p-3 min-w-[220px]`,children:(0,L.jsxDEV)(`span`,{className:`flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400`,children:[r?`کلید کاربری در جیرا (userKey)`:`Jira userKey`,(0,L.jsxDEV)(`span`,{className:`text-red-500`,children:`*`},void 0,!1)]},void 0,!0)},void 0,!1)
         ]},void 0,!0)},void 0,!1),
-        (0,L.jsxDEV)(`tbody`,{className:`divide-y divide-slate-100 dark:divide-slate-800 font-b-mitra`,children:filteredUsers.length===0?(0,L.jsxDEV)(`tr`,{children:(0,L.jsxDEV)(`td`,{colSpan:5,className:`p-6 text-center text-slate-400 font-b-nazanin`,children:r?`هیچ کاربری یافت نشد.`:`No users found.`},void 0,!1)},void 0,!1):filteredUsers.map((u,idx)=>{
-          let curVal=userKeyMappings[u.id]!==void 0?userKeyMappings[u.id]:(u.username||``);
+        (0,L.jsxDEV)(`tbody`,{className:`divide-y divide-slate-100 dark:divide-slate-800 font-b-mitra`,children:filteredUsers.length===0?(0,L.jsxDEV)(`tr`,{children:(0,L.jsxDEV)(`td`,{colSpan:6,className:`p-6 text-center text-slate-400 font-b-nazanin`,children:r?`هیچ کاربری یافت نشد.`:`No users found.`},void 0,!1)},void 0,!1):filteredUsers.map((u,idx)=>{
+          let curVal=userKeyMappings[u.id]!==void 0?userKeyMappings[u.id]:(u.username||``),included=isUserIncluded(u.id),inherited=getUserInheritedGroup(u.id);
           return (0,L.jsxDEV)(`tr`,{className:`hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors`,children:[
             (0,L.jsxDEV)(`td`,{className:`p-3 text-center text-slate-400`,children:A(idx+1)},void 0,!1),
             (0,L.jsxDEV)(`td`,{className:`p-3 font-bold text-slate-900 dark:text-slate-100`,children:`${u.firstName} ${u.lastName}`},void 0,!1),
             (0,L.jsxDEV)(`td`,{className:`p-3 font-mono text-[11px] text-slate-600 dark:text-slate-400`,dir:`ltr`,children:u.username},void 0,!1),
+            (0,L.jsxDEV)(`td`,{className:`p-3`,children:included?(0,L.jsxDEV)(`span`,{className:`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-b-nazanin`,title:inherited?`شامل شده از طریق گروه `+inherited.name:void 0,children:[(0,L.jsxDEV)(Ge,{className:`w-3 h-3`},void 0,!1),(0,L.jsxDEV)(`span`,{children:inherited?(r?`گروه: `+inherited.name:inherited.name):(r?`مشمول ارسال`:`Eligible`)},void 0,!1)]},void 0,!0):(0,L.jsxDEV)(`span`,{className:`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-b-nazanin`,children:(0,L.jsxDEV)(`span`,{children:r?`عدم ارسال`:`Excluded`},void 0,!1)},void 0,!1)},void 0,!1),
             (0,L.jsxDEV)(`td`,{className:`p-3 text-slate-500 font-b-nazanin`,children:u.jobTitle||`—`},void 0,!1),
             (0,L.jsxDEV)(`td`,{className:`p-2`,children:(0,L.jsxDEV)(`input`,{type:`text`,dir:`ltr`,value:curVal,onChange:e=>setUserKeyMappings(prev=>({...prev,[u.id]:e.target.value.trim()})),placeholder:u.username||`userKey`,className:`w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono font-bold text-indigo-700 dark:text-indigo-300 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden`},void 0,!1)},void 0,!1)
           ]},u.id,!1)

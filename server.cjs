@@ -29755,6 +29755,27 @@ app.post("/api/integrations/ai-flow/test", async (req, res) => {
   }
 });
 
+function isAiFlowUserIncluded(userId, cfg, users, groups) {
+  if (!cfg) return true;
+  if (!cfg.syncScope || cfg.syncScope === "all") return true;
+  if (cfg.syncScope === "specific") {
+    const selectedUsers = Array.isArray(cfg.selectedUserIds) ? cfg.selectedUserIds : [];
+    const selectedGroups = Array.isArray(cfg.selectedGroupIds) ? cfg.selectedGroupIds : [];
+    if (selectedUsers.includes(userId)) return true;
+    if (selectedGroups.length > 0) {
+      const user = (users || []).find((u) => u.id === userId);
+      if (user && Array.isArray(user.groupIds) && user.groupIds.some((gid) => selectedGroups.includes(gid))) {
+        return true;
+      }
+      if ((groups || []).some((g) => selectedGroups.includes(g.id) && Array.isArray(g.memberUserIds) && g.memberUserIds.includes(userId))) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return true;
+}
+
 app.post("/api/integrations/ai-flow/notify", async (req, res) => {
   try {
     const { userId, date } = req.body;
@@ -29768,6 +29789,10 @@ app.post("/api/integrations/ai-flow/notify", async (req, res) => {
     const cfg = dbData.settings?.aiFlowConfig;
     if (!cfg || !cfg.enabled || !cfg.apiUrl || !cfg.apiToken) {
       return res.json({ skipped: true, reason: "AI Flow integration is not enabled or not fully configured" });
+    }
+
+    if (!isAiFlowUserIncluded(userId, cfg, dbData.users || [], dbData.groups || [])) {
+      return res.json({ skipped: true, reason: "User is not included in AI Flow sync scope" });
     }
 
     const attendance = (dbData.attendance || []).filter((r) =>
@@ -29832,7 +29857,7 @@ app.post("/api/integrations/ai-flow/notify", async (req, res) => {
 
 app.post("/api/integrations/ai-flow/sync-batch", async (req, res) => {
   try {
-    const { startDate, endDate, userKeyMappings } = req.body;
+    const { startDate, endDate, userKeyMappings, syncScope, selectedUserIds, selectedGroupIds } = req.body;
     let dbData = {};
     if (fs.existsSync(dbFile)) {
       try { dbData = JSON.parse(fs.readFileSync(dbFile, "utf-8")); } catch {}
@@ -29843,12 +29868,22 @@ app.post("/api/integrations/ai-flow/sync-batch", async (req, res) => {
       return res.status(400).json({ error: "AI Flow API URL and Token are required" });
     }
 
+    const effectiveCfg = {
+      ...cfg,
+      syncScope: syncScope !== undefined ? syncScope : cfg.syncScope,
+      selectedUserIds: selectedUserIds !== undefined ? selectedUserIds : cfg.selectedUserIds,
+      selectedGroupIds: selectedGroupIds !== undefined ? selectedGroupIds : cfg.selectedGroupIds
+    };
+
     const mappings = userKeyMappings || cfg.userKeyMappings || {};
     const usersMap = new Map((dbData.users || []).map((u) => [u.id, u]));
 
     const dayMap = new Map();
 
     for (const r of (dbData.attendance || [])) {
+      if (!isAiFlowUserIncluded(r.userId, effectiveCfg, dbData.users || [], dbData.groups || [])) {
+        continue;
+      }
       const d = r.date || r.startDate;
       if (!d) continue;
       if (startDate && d < startDate) continue;

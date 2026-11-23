@@ -14,9 +14,14 @@ import {
   UserCheck,
   Search,
   Sparkles,
-  Info
+  Info,
+  Users,
+  Layers,
+  CheckSquare,
+  Square,
+  Filter
 } from 'lucide-react';
-import { User, SystemSettings, AiFlowIntegrationConfig } from '../types';
+import { User, Group, SystemSettings, AiFlowIntegrationConfig } from '../types';
 import { StorageService } from '../utils/storage';
 import { Language } from '../utils/translations';
 import { PersianDatePicker } from '../components/PersianDatePicker';
@@ -33,19 +38,26 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
 
   const [settings, setSettings] = useState<SystemSettings>(() => StorageService.getSettings());
   const [users, setUsers] = useState<User[]>(() => StorageService.getUsers());
+  const [groups, setGroups] = useState<Group[]>(() => StorageService.getGroups());
 
   // AI Flow Config State
   const initialConfig = settings.aiFlowConfig || {
     enabled: false,
     apiUrl: 'http://127.0.0.1:6060/api/workhours',
     apiToken: '',
-    userKeyMappings: {}
+    userKeyMappings: {},
+    syncScope: 'all',
+    selectedUserIds: [],
+    selectedGroupIds: []
   };
 
   const [enabled, setEnabled] = useState<boolean>(initialConfig.enabled || false);
   const [apiUrl, setApiUrl] = useState<string>(initialConfig.apiUrl || '');
   const [apiToken, setApiToken] = useState<string>(initialConfig.apiToken || '');
   const [showToken, setShowToken] = useState<boolean>(false);
+  const [syncScope, setSyncScope] = useState<'all' | 'specific'>(initialConfig.syncScope || 'all');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialConfig.selectedUserIds || []);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(initialConfig.selectedGroupIds || []);
   const [userKeyMappings, setUserKeyMappings] = useState<Record<string, string>>(
     () => initialConfig.userKeyMappings || {}
   );
@@ -61,8 +73,43 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
   const [syncEndDate, setSyncEndDate] = useState<string>(() => getTodayJalali());
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  // User Filter State
+  // User Filter & Scope State
   const [userSearch, setUserSearch] = useState<string>('');
+  const [scopeUserSearch, setScopeUserSearch] = useState<string>('');
+  const [onlyShowIncluded, setOnlyShowIncluded] = useState<boolean>(false);
+
+  // Helper: check if a user is covered by selected groups
+  const getUserInheritedGroup = (userId: string): Group | undefined => {
+    if (selectedGroupIds.length === 0) return undefined;
+    const targetUser = users.find(u => u.id === userId);
+    return groups.find(g => {
+      if (!selectedGroupIds.includes(g.id)) return false;
+      if (Array.isArray(g.memberUserIds) && g.memberUserIds.includes(userId)) return true;
+      if (targetUser && Array.isArray(targetUser.groupIds) && targetUser.groupIds.includes(g.id)) return true;
+      return false;
+    });
+  };
+
+  // Helper: check if a user is eligible for syncing under current scope
+  const isUserIncluded = (userId: string): boolean => {
+    if (syncScope === 'all') return true;
+    if (selectedUserIds.includes(userId)) return true;
+    return !!getUserInheritedGroup(userId);
+  };
+
+  // Toggle user in specific selection
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUserIds(prev =>
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  // Toggle group in specific selection
+  const toggleGroupSelection = (groupId: string) => {
+    setSelectedGroupIds(prev =>
+      prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+    );
+  };
 
   // Handle saving main settings
   const handleSaveConfig = async () => {
@@ -71,6 +118,9 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
       enabled,
       apiUrl: apiUrl.trim(),
       apiToken: apiToken.trim(),
+      syncScope,
+      selectedUserIds,
+      selectedGroupIds,
       userKeyMappings
     };
 
@@ -162,7 +212,10 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
         body: JSON.stringify({
           startDate: syncStartDate || undefined,
           endDate: syncEndDate || undefined,
-          userKeyMappings
+          userKeyMappings,
+          syncScope,
+          selectedUserIds,
+          selectedGroupIds
         })
       });
 
@@ -210,6 +263,7 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
   };
 
   const filteredUsers = users.filter(u => {
+    if (onlyShowIncluded && !isUserIncluded(u.id)) return false;
     if (!userSearch) return true;
     const term = userSearch.toLowerCase();
     const fullName = `${u.firstName} ${u.lastName}`.toLowerCase();
@@ -377,6 +431,226 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
         </div>
       </div>
 
+      {/* Scope Settings Card: All vs Selected Users & Groups */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span>{isPersian ? 'محدوده ارسال داده‌ها (پرسنل و گروه‌ها)' : 'Data Sync Scope (Users & Groups)'}</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-b-nazanin">
+              {isPersian
+                ? 'تعیین کنید اطلاعات کارکرد کدام پرسنل یا کدام گروه‌های کاری به سامانه AI Flow ارسال گردد.'
+                : 'Specify which users or groups will have their workhours pushed to AI Flow.'}
+            </p>
+          </div>
+
+          {/* Scope Selector Segmented Control */}
+          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl shrink-0">
+            <button
+              type="button"
+              onClick={() => setSyncScope('all')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer font-b-nazanin ${
+                syncScope === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              {isPersian ? 'همه پرسنل (بدون فیلتر)' : 'All Personnel'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSyncScope('specific')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer font-b-nazanin ${
+                syncScope === 'specific'
+                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              {isPersian ? 'پرسنل و گروه‌های منتخب' : 'Selected Users & Groups'}
+            </button>
+          </div>
+        </div>
+
+        {syncScope === 'all' ? (
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400 font-b-nazanin flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span>
+                {isPersian
+                  ? `حالت سراسری فعال است: کارکرد تمام ${toPersianDigits(users.length)} کاربر سامانه به AI Flow ارسال خواهد شد.`
+                  : `Global scope active: all ${users.length} users will be synced to AI Flow.`}
+              </span>
+            </div>
+            <span className="text-[11px] px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold rounded-lg font-b-mitra">
+              {isPersian ? 'ارسال کامل' : 'Full Sync'}
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            {/* Section 1: Groups */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-500" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-b-nazanin">
+                    {isPersian ? '۱. گروه‌های کاری منتخب:' : '1. Selected Groups:'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-b-mitra">
+                    ({isPersian ? `${toPersianDigits(selectedGroupIds.length)} گروه انتخاب شده` : `${selectedGroupIds.length} groups selected`})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGroupIds(groups.map(g => g.id))}
+                    className="text-indigo-600 hover:underline dark:text-indigo-400 cursor-pointer font-b-nazanin text-[11px] font-bold"
+                  >
+                    {isPersian ? 'انتخاب همه گروه‌ها' : 'Select All'}
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-600">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGroupIds([])}
+                    className="text-slate-500 hover:underline cursor-pointer font-b-nazanin text-[11px]"
+                  >
+                    {isPersian ? 'لغو انتخاب' : 'Clear'}
+                  </button>
+                </div>
+              </div>
+
+              {groups.length === 0 ? (
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-slate-400 text-xs text-center font-b-nazanin">
+                  {isPersian ? 'هیچ گروهی در سیستم تعریف نشده است.' : 'No groups defined.'}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {groups.map(g => {
+                    const isChecked = selectedGroupIds.includes(g.id);
+                    const memberCount = Array.isArray(g.memberUserIds) ? g.memberUserIds.length : 0;
+                    return (
+                      <div
+                        key={g.id}
+                        onClick={() => toggleGroupSelection(g.id)}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 select-none ${
+                          isChecked
+                            ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-950 dark:text-indigo-200 shadow-2xs'
+                            : 'bg-slate-50/60 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {isChecked ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold block truncate font-b-nazanin">{g.name}</span>
+                            {g.description && (
+                              <span className="text-[10px] text-slate-400 block truncate">{g.description}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 font-bold shrink-0 font-b-mitra">
+                          {isPersian ? `${toPersianDigits(memberCount)} کاربر` : `${memberCount} users`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Section 2: Individual Users */}
+            <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-blue-500" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-b-nazanin">
+                    {isPersian ? '۲. کاربران اختصاصی منتخب:' : '2. Individual Selected Users:'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-b-mitra">
+                    ({isPersian ? `${toPersianDigits(selectedUserIds.length)} کاربر مستقیم` : `${selectedUserIds.length} direct users`})
+                  </span>
+                </div>
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={scopeUserSearch}
+                    onChange={e => setScopeUserSearch(e.target.value)}
+                    placeholder={isPersian ? 'جستجو در پرسنل...' : 'Search users...'}
+                    className="w-full pr-8 pl-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-b-nazanin"
+                  />
+                </div>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {users
+                  .filter(u => {
+                    if (!scopeUserSearch) return true;
+                    const q = scopeUserSearch.toLowerCase();
+                    return `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) || u.username.toLowerCase().includes(q);
+                  })
+                  .map(u => {
+                    const inheritedGroup = getUserInheritedGroup(u.id);
+                    const isDirectlyChecked = selectedUserIds.includes(u.id);
+                    const isCovered = isDirectlyChecked || !!inheritedGroup;
+
+                    return (
+                      <div
+                        key={u.id}
+                        onClick={() => {
+                          if (inheritedGroup) return; // already included via group
+                          toggleUserSelection(u.id);
+                        }}
+                        className={`p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 select-none ${
+                          inheritedGroup
+                            ? 'bg-purple-50/60 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 text-purple-950 dark:text-purple-200 cursor-default'
+                            : isDirectlyChecked
+                            ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 text-blue-950 dark:text-blue-200 cursor-pointer shadow-2xs'
+                            : 'bg-slate-50/40 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 cursor-pointer'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isCovered ? (
+                            <CheckSquare className={`w-4 h-4 shrink-0 ${inheritedGroup ? 'text-purple-500' : 'text-blue-600'}`} />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-400 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold block truncate font-b-nazanin">{u.firstName} {u.lastName}</span>
+                            <span className="text-[10px] text-slate-400 font-mono block truncate" dir="ltr">{u.username}</span>
+                          </div>
+                        </div>
+                        {inheritedGroup ? (
+                          <span className="text-[9px] px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold shrink-0 font-b-nazanin" title={`عضو گروه ${inheritedGroup.name}`}>
+                            {inheritedGroup.name}
+                          </span>
+                        ) : isDirectlyChecked ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold shrink-0 font-b-nazanin">
+                            {isPersian ? 'مستقیم' : 'Direct'}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Total Included Summary */}
+              <div className="flex items-center justify-between text-xs font-b-nazanin pt-2 text-slate-500 dark:text-slate-400">
+                <span>
+                  {isPersian
+                    ? `مجموعاً ${toPersianDigits(users.filter(u => isUserIncluded(u.id)).length)} کاربر از کل ${toPersianDigits(users.length)} کاربر مشمول ارسال به AI Flow هستند.`
+                    : `Total ${users.filter(u => isUserIncluded(u.id)).length} of ${users.length} users will be synced to AI Flow.`}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Employee to Jira userKey Mapping Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -405,9 +679,9 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
           </div>
         </div>
 
-        {/* Filter Search */}
-        <div className="flex items-center gap-2 max-w-sm">
-          <div className="relative w-full">
+        {/* Filter Controls: Search & Only Included Toggle */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative w-full sm:w-72">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3" />
             <input
               type="text"
@@ -417,6 +691,19 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
               className="w-full pr-8 pl-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-b-nazanin"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={() => setOnlyShowIncluded(!onlyShowIncluded)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer font-b-nazanin shrink-0 ${
+              onlyShowIncluded
+                ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300'
+                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>{isPersian ? 'فقط نمایش پرسنل مشمول ارسال' : 'Only Eligible Users'}</span>
+          </button>
         </div>
 
         {/* Table */}
@@ -427,6 +714,7 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
                 <th className="p-3 w-12 text-center">#</th>
                 <th className="p-3">{isPersian ? 'نام و نام خانوادگی' : 'Full Name'}</th>
                 <th className="p-3">{isPersian ? 'نام کاربری در سامانه' : 'Clocky Username'}</th>
+                <th className="p-3">{isPersian ? 'وضعیت ارسال' : 'Sync Status'}</th>
                 <th className="p-3">{isPersian ? 'عنوان شغلی' : 'Job Title'}</th>
                 <th className="p-3 min-w-[220px]">
                   <span className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
@@ -439,13 +727,16 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-b-mitra">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-6 text-center text-slate-400 font-b-nazanin">
+                  <td colSpan={6} className="p-6 text-center text-slate-400 font-b-nazanin">
                     {isPersian ? 'هیچ کاربری یافت نشد.' : 'No users found.'}
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((u, idx) => {
                   const currentVal = userKeyMappings[u.id] !== undefined ? userKeyMappings[u.id] : (u.username || '');
+                  const included = isUserIncluded(u.id);
+                  const inherited = getUserInheritedGroup(u.id);
+
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="p-3 text-center text-slate-400">{toPersianDigits(idx + 1)}</td>
@@ -454,6 +745,21 @@ export const IntegrationsView: React.FC<IntegrationsViewProps> = ({ user, lang }
                       </td>
                       <td className="p-3 font-mono text-[11px] text-slate-600 dark:text-slate-400" dir="ltr">
                         {u.username}
+                      </td>
+                      <td className="p-3">
+                        {included ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-b-nazanin"
+                            title={inherited ? `شامل شده از طریق گروه ${inherited.name}` : undefined}
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{inherited ? (isPersian ? `گروه: ${inherited.name}` : inherited.name) : (isPersian ? 'مشمول ارسال' : 'Eligible')}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-b-nazanin">
+                            <span>{isPersian ? 'عدم ارسال' : 'Excluded'}</span>
+                          </span>
+                        )}
                       </td>
                       <td className="p-3 text-slate-500 font-b-nazanin">
                         {u.jobTitle || '—'}

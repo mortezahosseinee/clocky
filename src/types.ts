@@ -21,6 +21,9 @@ export interface AiFlowIntegrationConfig {
   apiUrl: string;
   apiToken: string;
   userKeyMappings?: Record<string, string>; // userId -> jiraUserKey
+  syncScope?: 'all' | 'specific';
+  selectedUserIds?: string[];
+  selectedGroupIds?: string[];
   lastSyncAt?: string;
   lastStatus?: 'success' | 'error' | 'idle';
   lastError?: string;

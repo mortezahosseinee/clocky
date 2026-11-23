@@ -1089,6 +1089,22 @@ export const StorageService = {
     try {
       const cfg = this.getSettings().aiFlowConfig;
       if (!cfg || !cfg.enabled) return;
+
+      // Filter by syncScope if specific
+      if (cfg.syncScope === 'specific') {
+        const selectedUsers = cfg.selectedUserIds || [];
+        const selectedGroups = cfg.selectedGroupIds || [];
+        const user = this.getUserById(userId);
+        const isUserSelected = selectedUsers.includes(userId);
+        const isGroupSelected = selectedGroups.length > 0 && (
+          (user && Array.isArray(user.groupIds) && user.groupIds.some(gid => selectedGroups.includes(gid))) ||
+          this.getGroups().some(g => selectedGroups.includes(g.id) && Array.isArray(g.memberUserIds) && g.memberUserIds.includes(userId))
+        );
+        if (!isUserSelected && !isGroupSelected) {
+          return; // Skipped, user not in sync scope
+        }
+      }
+
       fetch('/api/integrations/ai-flow/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
