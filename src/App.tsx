@@ -22,6 +22,7 @@ import { GroupsView } from './views/GroupsView';
 import { ProfileView } from './views/ProfileView';
 import { LogsView } from './views/LogsView';
 import { SettingsView } from './views/SettingsView';
+import { IntegrationsView } from './views/IntegrationsView';
 import { SessionsSecurityView } from './views/SessionsSecurityView';
 import { MessengerView } from './views/MessengerView';
 import { AllRecordsView } from './views/AllRecordsView';
@@ -385,6 +386,13 @@ export default function App() {
 
           {activeTab === 'logs' && (
             <LogsView
+              user={currentUser}
+              lang={lang}
+            />
+          )}
+
+          {activeTab === 'integrations' && currentUser.role === 'admin' && (
+            <IntegrationsView
               user={currentUser}
               lang={lang}
             />

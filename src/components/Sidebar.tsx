@@ -19,7 +19,8 @@ import {
   X,
   Sliders,
   MessageSquare,
-  CalendarDays
+  CalendarDays,
+  Webhook
 } from 'lucide-react';
 import { User } from '../types';
 import { translations, Language } from '../utils/translations';
@@ -43,6 +44,7 @@ export type ActiveTab =
   | 'groups'
   | 'profile'
   | 'logs'
+  | 'integrations'
   | 'settings'
   | 'sessions'
   | 'messenger';
@@ -190,6 +192,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'sessions' as ActiveTab,
       label: isPersian ? 'مدیریت نشست‌ها' : 'Session Management',
       icon: Shield,
+      visible: isAdmin
+    },
+    {
+      id: 'integrations' as ActiveTab,
+      label: isPersian ? 'یکپارچه‌سازی (AI Flow)' : 'Integrations (AI Flow)',
+      icon: Webhook,
       visible: isAdmin
     },
     {

@@ -16,6 +16,17 @@ export interface CustomUiText {
   description: string;
 }
 
+export interface AiFlowIntegrationConfig {
+  enabled: boolean;
+  apiUrl: string;
+  apiToken: string;
+  userKeyMappings?: Record<string, string>; // userId -> jiraUserKey
+  lastSyncAt?: string;
+  lastStatus?: 'success' | 'error' | 'idle';
+  lastError?: string;
+  lastUpsertedCount?: number;
+}
+
 export interface SystemSettings {
   primaryColor: string;
   secondaryColor: string;
@@ -27,6 +38,7 @@ export interface SystemSettings {
   organizationName?: string;
   organizationLogo?: string;
   customTitles?: Record<string, string>;
+  aiFlowConfig?: AiFlowIntegrationConfig;
 }
 
 export interface User {
@@ -48,6 +60,7 @@ export interface User {
   passwordHash: string;
   avatar?: string;
   updatedAt?: string;
+  jiraUserKey?: string;
 }
 
 export interface Group {

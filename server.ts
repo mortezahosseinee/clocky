@@ -1659,6 +1659,289 @@ app.get('/api/version', (req, res) => {
   });
 });
 
+// Helper for Jalali to Gregorian date conversion for AI Flow
+function jalaliToGregorian(jy: number, jm: number, jd: number): [number, number, number] {
+  let gy = (jy <= 979) ? 621 : 1600;
+  jy -= (jy <= 979) ? 0 : 979;
+  let days = (365 * jy) + (Math.floor(jy / 33) * 8) + Math.floor(((jy % 33) + 3) / 4) +
+    78 + jd + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+  gy += 400 * Math.floor(days / 146097);
+  days %= 146097;
+  if (days > 36524) {
+    gy += 100 * Math.floor(--days / 36524);
+    days %= 36524;
+    if (days >= 365) days++;
+  }
+  gy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  gy += Math.floor((days - 1) / 365);
+  if (days > 0) days = (days - 1) % 365;
+  let gd = days + 1;
+  const sal_a = [0, 31, ((gy % 4 === 0 && gy % 100 !== 0) || (gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let gm = 0;
+  for (gm = 0; gm < 13; gm++) {
+    const v = sal_a[gm];
+    if (gd <= v) break;
+    gd -= v;
+  }
+  return [gy, gm, gd];
+}
+
+function convertJalaliToIso(jalaliStr: string): string {
+  if (!jalaliStr) return new Date().toISOString().split('T')[0];
+  const parts = jalaliStr.split('/').map(Number);
+  if (parts.length === 3 && parts[0] > 1300) {
+    const [gy, gm, gd] = jalaliToGregorian(parts[0], parts[1], parts[2]);
+    return `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`;
+  }
+  return jalaliStr;
+}
+
+// AI Flow Integration Endpoints
+app.get('/api/integrations/ai-flow/config', (req, res) => {
+  try {
+    let existingFile: any = {};
+    if (fs.existsSync(dbFile)) {
+      try { existingFile = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch {}
+    }
+    const cfg = existingFile.settings?.aiFlowConfig || {
+      enabled: false,
+      apiUrl: 'http://127.0.0.1:6060/api/workhours',
+      apiToken: '',
+      userKeyMappings: {}
+    };
+    return res.json(cfg);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/integrations/ai-flow/config', async (req, res) => {
+  try {
+    const newConfig = req.body;
+    let existingFile: any = {};
+    if (fs.existsSync(dbFile)) {
+      try { existingFile = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch {}
+    }
+    if (!existingFile.settings) existingFile.settings = {};
+    existingFile.settings.aiFlowConfig = newConfig;
+
+    try { fs.writeFileSync(dbFile, JSON.stringify(existingFile, null, 2), 'utf-8'); } catch {}
+
+    if (pgPool) {
+      await pgPool.query('ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS ai_flow_config JSONB').catch(() => {});
+      await pgPool.query('UPDATE system_settings SET ai_flow_config = $1 WHERE id = 1', [JSON.stringify(newConfig)]).catch(() => {});
+    }
+
+    return res.json({ success: true, config: newConfig });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/integrations/ai-flow/test', async (req, res) => {
+  try {
+    const { apiUrl, apiToken } = req.body;
+    if (!apiUrl) return res.status(400).json({ error: 'آدرس API الزامی است' });
+
+    let healthUrl = apiUrl.replace(/\/api\/workhours\/?$/, '/api/health');
+    if (!healthUrl.endsWith('/api/health')) {
+      try {
+        const u = new URL(apiUrl);
+        healthUrl = `${u.origin}/api/health`;
+      } catch {
+        healthUrl = `${apiUrl.replace(/\/+$/, '')}/api/health`;
+      }
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const testRes = await fetch(healthUrl, {
+      method: 'GET',
+      headers: apiToken ? { 'Authorization': `Bearer ${apiToken}` } : {},
+      signal: controller.signal
+    }).catch(err => {
+      throw new Error(`اتصال به آدرس ${healthUrl} ناموفق بود: ${err.message}`);
+    });
+    clearTimeout(timeout);
+
+    const text = await testRes.text();
+    let json: any = {};
+    try { json = JSON.parse(text); } catch {}
+
+    if (testRes.ok || json.ok) {
+      return res.json({ ok: true, message: 'اتصال به سامانه AI Flow با موفقیت برقرار شد.' });
+    } else {
+      return res.status(400).json({ error: `پاسخ سرور (${testRes.status}): ${text}` });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/integrations/ai-flow/notify', async (req, res) => {
+  try {
+    const { userId, date } = req.body;
+    if (!userId || !date) return res.status(400).json({ error: 'userId and date are required' });
+
+    let dbData: any = {};
+    if (fs.existsSync(dbFile)) {
+      try { dbData = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch {}
+    }
+
+    const cfg = dbData.settings?.aiFlowConfig;
+    if (!cfg || !cfg.enabled || !cfg.apiUrl || !cfg.apiToken) {
+      return res.json({ skipped: true, reason: 'AI Flow integration is not enabled or not fully configured' });
+    }
+
+    const attendance = (dbData.attendance || []).filter((r: any) =>
+      r.userId === userId && (r.date === date || r.startDate === date)
+    );
+
+    const totalMinutes = attendance.reduce((acc: number, r: any) => acc + (Number(r.durationMinutes) || 0), 0);
+    const totalHours = Math.min(24, Math.round((totalMinutes / 60) * 100) / 100);
+
+    const user = (dbData.users || []).find((u: any) => u.id === userId);
+    const userKey = (cfg.userKeyMappings && cfg.userKeyMappings[userId]) || (user ? (user.jiraUserKey || user.username) : userId);
+    const displayName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || userKey : userKey;
+    const gregDate = convertJalaliToIso(date);
+
+    const payload = {
+      records: [
+        {
+          userKey,
+          displayName,
+          date: gregDate,
+          hours: totalHours
+        }
+      ]
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const postRes = await fetch(cfg.apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${cfg.apiToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    const resText = await postRes.text();
+    let resJson: any = {};
+    try { resJson = JSON.parse(resText); } catch {}
+
+    if (postRes.ok) {
+      cfg.lastSyncAt = new Date().toISOString();
+      cfg.lastStatus = 'success';
+      cfg.lastError = '';
+      cfg.lastUpsertedCount = resJson.upserted || 1;
+    } else {
+      cfg.lastSyncAt = new Date().toISOString();
+      cfg.lastStatus = 'error';
+      cfg.lastError = `HTTP ${postRes.status}: ${resText.substring(0, 200)}`;
+    }
+
+    try { fs.writeFileSync(dbFile, JSON.stringify(dbData, null, 2), 'utf-8'); } catch {}
+
+    return res.json({ ok: postRes.ok, status: postRes.status, result: resJson });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/integrations/ai-flow/sync-batch', async (req, res) => {
+  try {
+    const { startDate, endDate, userKeyMappings } = req.body;
+    let dbData: any = {};
+    if (fs.existsSync(dbFile)) {
+      try { dbData = JSON.parse(fs.readFileSync(dbFile, 'utf-8')); } catch {}
+    }
+
+    const cfg = dbData.settings?.aiFlowConfig;
+    if (!cfg || !cfg.apiUrl || !cfg.apiToken) {
+      return res.status(400).json({ error: 'AI Flow API URL and Token are required' });
+    }
+
+    const mappings = userKeyMappings || cfg.userKeyMappings || {};
+    const usersMap = new Map((dbData.users || []).map((u: any) => [u.id, u]));
+
+    const dayMap = new Map<string, { userId: string; date: string; totalMinutes: number }>();
+
+    for (const r of (dbData.attendance || [])) {
+      const d = r.date || r.startDate;
+      if (!d) continue;
+      if (startDate && d < startDate) continue;
+      if (endDate && d > endDate) continue;
+
+      const key = `${r.userId}_${d}`;
+      const cur = dayMap.get(key) || { userId: r.userId, date: d, totalMinutes: 0 };
+      cur.totalMinutes += (Number(r.durationMinutes) || 0);
+      dayMap.set(key, cur);
+    }
+
+    const recordsToSend = Array.from(dayMap.values()).map(item => {
+      const u = usersMap.get(item.userId) as any;
+      const userKey = (mappings[item.userId]) || (u ? (u.jiraUserKey || u.username) : item.userId);
+      const displayName = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || userKey : userKey;
+      const hours = Math.min(24, Math.round((item.totalMinutes / 60) * 100) / 100);
+      return {
+        userKey,
+        displayName,
+        date: convertJalaliToIso(item.date),
+        hours
+      };
+    });
+
+    if (recordsToSend.length === 0) {
+      return res.json({ ok: true, totalRecords: 0, batches: 0, message: 'هیچ رکوردی در بازه انتخابی یافت نشد.' });
+    }
+
+    const chunkSize = 1000;
+    let totalUpserted = 0;
+    const totalBatches = Math.ceil(recordsToSend.length / chunkSize);
+
+    for (let i = 0; i < recordsToSend.length; i += chunkSize) {
+      const chunk = recordsToSend.slice(i, i + chunkSize);
+      const postRes = await fetch(cfg.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${cfg.apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ records: chunk })
+      });
+
+      if (!postRes.ok) {
+        const errText = await postRes.text();
+        throw new Error(`AI Flow batch HTTP ${postRes.status}: ${errText.substring(0, 200)}`);
+      }
+      const data: any = await postRes.json().catch(() => ({}));
+      totalUpserted += (data.upserted || chunk.length);
+    }
+
+    cfg.lastSyncAt = new Date().toISOString();
+    cfg.lastStatus = 'success';
+    cfg.lastError = '';
+    cfg.lastUpsertedCount = totalUpserted;
+    try { fs.writeFileSync(dbFile, JSON.stringify(dbData, null, 2), 'utf-8'); } catch {}
+
+    return res.json({
+      ok: true,
+      totalRecords: recordsToSend.length,
+      batches: totalBatches,
+      upserted: totalUpserted
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // API health endpoint
 app.get('/api/health', (req, res) => {
   res.json({

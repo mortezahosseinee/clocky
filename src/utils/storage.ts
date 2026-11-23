@@ -1079,8 +1079,22 @@ export const StorageService = {
       records.unshift(stampedRecord);
     }
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+    this.notifyAiFlow(stampedRecord.userId, stampedRecord.date || stampedRecord.startDate || getTodayJalali());
     this.pushToServer();
     schedulePushToServer();
+  },
+
+  notifyAiFlow(userId: string, date: string) {
+    if (typeof window === 'undefined') return;
+    try {
+      const cfg = this.getSettings().aiFlowConfig;
+      if (!cfg || !cfg.enabled) return;
+      fetch('/api/integrations/ai-flow/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, date })
+      }).catch(() => {});
+    } catch {}
   },
 
   getDeletedAttendanceIds(): string[] {
@@ -1106,8 +1120,13 @@ export const StorageService = {
 
   deleteAttendanceRecord(recordId: string) {
     this.markAttendanceAsDeleted(recordId);
-    const records = this.getAttendanceRecords().filter(r => r.id !== recordId);
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+    const records = this.getAttendanceRecords();
+    const target = records.find(r => r.id === recordId);
+    const remaining = records.filter(r => r.id !== recordId);
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(remaining));
+    if (target) {
+      this.notifyAiFlow(target.userId, target.date || target.startDate || getTodayJalali());
+    }
     if (typeof window !== 'undefined') {
       fetch(`/api/attendance/${encodeURIComponent(recordId)}`, { method: 'DELETE' }).catch(() => {});
     }
